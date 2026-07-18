@@ -38,8 +38,14 @@ The browser cached the old `app.js`. Hard-refresh with `Ctrl+Shift+R`. (Newer pa
 
 ## Customer connected in PasarGuard but the user link doesn't work
 - The customer's inbound must **match** the node's real inbound: port, protocol, network, SNI/host, TLS. (See [Connect from PasarGuard](05-Customer-Connect-EN)).
-- The node's `--force-inbounds` must include the real inbound tag (default `vless-in`).
+- The node auto-derives the real inbound tags from the running config and pins users to them; you don't need to set `--force-inbounds` manually unless you want to restrict users to a subset of inbounds.
 - View the node config with `sudo pg-node-agent edit` and give the exact parameters to the customer.
+
+## Every customer user gets a config but can't connect ("EOF")
+This usually means the users were added to no real inbound (the client connects but its UUID isn't registered on any inbound, so the handshake drops with EOF).
+- **Common cause:** on older nodes, `PG_AGENT_FORCE_INBOUNDS=vless-in` is still pinned in the env file, but you pushed a real core config with a different tag (e.g. `vless-reality`). That stale override sends users to the non-existent `vless-in` tag.
+- **Fix:** run `sudo pg-node-agent edit-env` and set `PG_AGENT_FORCE_INBOUNDS` to **empty** (or to your config's real tag), then restart. When empty, the node auto-derives the tags from the live config.
+- To confirm, look for a `matched no inbound` warning in `sudo pg-node-agent logs` — it means a user landed on no inbound.
 
 ## Customer users got disconnected
 - Quota/expiry likely ran out. Usage: `GET /api/v1/customers/{id}/usage`.

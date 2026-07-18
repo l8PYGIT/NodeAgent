@@ -17,6 +17,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 
@@ -39,7 +40,8 @@ type Manager struct {
 	users         map[string]map[string]*common.User // tenantID -> namespacedEmail -> user
 	emailTo       map[string]string                  // namespacedEmail -> tenantID
 	creds         map[string]string                  // credential -> namespacedEmail (owner)
-	forceInbounds []string                           // if set, every user is applied to these inbound tags
+	forceInbounds []string                           // operator override: if set, every user is applied to these inbound tags
+	autoInbounds  []string                           // proxy inbound tags derived from the running config (fallback when forceInbounds is empty)
 	lastSeen      map[string]int64                   // namespacedEmail -> last absolute traffic bytes (for delta accounting)
 	config        string                             // the raw JSON of the running core config
 }
@@ -55,22 +57,35 @@ func NewManager(cfg *config.Config, reg *tenant.Registry) *Manager {
 	}
 }
 
-// SetForceInbounds makes every tenant user be applied to the given inbound tags,
-// regardless of the inbound tags the customer's panel sends. This guarantees
-// users land on the node's actual shared inbound(s) even when the external
-// panel's inbound names differ.
+// SetForceInbounds sets an operator override: every tenant user is applied to
+// the given inbound tags regardless of the tags the customer's panel sends. When
+// left empty, the manager instead auto-derives the tags from the running config
+// (see effectiveInbounds), which is the normal case. An explicit override only
+// makes sense if the operator wants to pin users to a subset of the node's
+// proxy inbounds.
 func (m *Manager) SetForceInbounds(tags []string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.forceInbounds = tags
 }
 
-// buildUser returns the namespaced user to apply to the core, honoring
-// force-inbounds when configured.
+// effectiveInbounds returns the inbound tags every tenant user must be applied
+// to. Callers hold m.mu. The operator override wins; otherwise the tags derived
+// from the running config are used. The customer panel's own tags are never
+// trusted because they rarely match the node's real inbound names.
+func (m *Manager) effectiveInbounds() []string {
+	if len(m.forceInbounds) > 0 {
+		return m.forceInbounds
+	}
+	return m.autoInbounds
+}
+
+// buildUser returns the namespaced user to apply to the core, pinning it to the
+// node's effective inbound tags so it lands on the real shared inbound(s).
 func (m *Manager) buildUser(tenantID string, u *common.User) *common.User {
 	inbounds := u.GetInbounds()
-	if len(m.forceInbounds) > 0 {
-		inbounds = m.forceInbounds
+	if eff := m.effectiveInbounds(); len(eff) > 0 {
+		inbounds = eff
 	}
 	return &common.User{
 		Email:    namespacedEmail(tenantID, u.GetEmail()),
@@ -155,7 +170,39 @@ func (m *Manager) startCoreLocked(ctx context.Context, configJSON string) error 
 	}
 	m.core = core
 	m.config = configJSON
+	m.autoInbounds = proxyInboundTags(configJSON)
+	if len(m.forceInbounds) == 0 && len(m.autoInbounds) == 0 {
+		log.Printf("shared core: warning: config has no proxy inbounds; tenant users will match no inbound and clients will fail to connect")
+	}
 	return nil
+}
+
+// proxyInboundTags returns the tags of every proxy inbound in a core config.
+// Non-proxy inbounds (e.g. dokodemo-door API listeners) are skipped because a
+// tenant user carries no account for them. Tenant users are pinned to these tags
+// so they land on the node's real inbound(s) no matter what tags the customer's
+// panel used. Unparseable input yields nil.
+func proxyInboundTags(configJSON string) []string {
+	var doc struct {
+		Inbounds []struct {
+			Tag      string `json:"tag"`
+			Protocol string `json:"protocol"`
+		} `json:"inbounds"`
+	}
+	if err := json.Unmarshal([]byte(configJSON), &doc); err != nil {
+		return nil
+	}
+	proxy := map[string]bool{
+		"vmess": true, "vless": true, "trojan": true,
+		"shadowsocks": true, "hysteria": true,
+	}
+	var tags []string
+	for _, ib := range doc.Inbounds {
+		if ib.Tag != "" && proxy[strings.ToLower(ib.Protocol)] {
+			tags = append(tags, ib.Tag)
+		}
+	}
+	return tags
 }
 
 // Started reports whether the shared core process is running.
@@ -212,8 +259,10 @@ func (m *Manager) XrayExecutablePath() string {
 
 // SharableInbounds returns a {"inbounds":[...]} JSON document containing only the
 // inbound definitions a customer needs to replicate the node's connection in
-// their own panel. When force-inbounds is set, only those tags are returned.
-// Outbounds, routing and other operator-only sections are intentionally omitted.
+// their own panel. It is narrowed to the effective inbound tags (operator
+// override, else the proxy inbounds derived from the config) so the customer
+// sees exactly the inbound(s) its users actually land on. Outbounds, routing and
+// other operator-only sections are intentionally omitted.
 func (m *Manager) SharableInbounds() (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -227,9 +276,9 @@ func (m *Manager) SharableInbounds() (string, error) {
 		return "", fmt.Errorf("parse config: %w", err)
 	}
 	keep := doc.Inbounds
-	if len(m.forceInbounds) > 0 {
-		allowed := make(map[string]bool, len(m.forceInbounds))
-		for _, t := range m.forceInbounds {
+	if eff := m.effectiveInbounds(); len(eff) > 0 {
+		allowed := make(map[string]bool, len(eff))
+		for _, t := range eff {
 			allowed[t] = true
 		}
 		filtered := make([]json.RawMessage, 0, len(doc.Inbounds))
@@ -241,7 +290,7 @@ func (m *Manager) SharableInbounds() (string, error) {
 				filtered = append(filtered, ib)
 			}
 		}
-		// Only narrow when at least one forced tag actually matched; otherwise
+		// Only narrow when at least one effective tag actually matched; otherwise
 		// fall back to all inbounds so the customer still gets something usable.
 		if len(filtered) > 0 {
 			keep = filtered

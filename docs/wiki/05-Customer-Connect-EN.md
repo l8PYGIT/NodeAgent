@@ -28,7 +28,7 @@ You (the customer) have your own PasarGuard panel. You add the operator's node l
 The node has one shared real inbound (e.g. `vless-in` on port `443`). For your users' links to work:
 - Your panel's inbound must match the node's real inbound in **port, protocol, network (tcp/ws/...), SNI/host and TLS settings**.
 - **You don't have to guess:** the operator can click **"Customer connection"** in their panel and give you the exact inbound definition (output of `GET /subscriptions/{id}/connection` or `GET /nodes/{id}/inbounds`). Recreate that same JSON in your panel.
-- The system automatically places your users on the node's real inbound (`force-inbounds`), but the connection parameters in the generated link come from your panel — so they must match the node.
+- The system automatically places your users on the node's real inbound, but the connection parameters in the generated link come from your panel — so they must match the node.
 
 ## Limitations
 - You can't change the core config/protocol (it belongs to the operator).

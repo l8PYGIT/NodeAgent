@@ -13,6 +13,9 @@
 //	PG_AGENT_CORE_KEY         optional: enables a PasarGuard-compatible gRPC API
 //	                          (core-config management only) authenticated by this key
 //	PG_AGENT_GRPC_ADDR        gRPC listen address for the compat API (default :62050)
+//	PG_AGENT_FORCE_INBOUNDS   optional CSV override of inbound tags every tenant
+//	                          user is applied to. Empty = auto-derive the proxy
+//	                          inbound tags from the running core config.
 //	SSL_CERT_FILE             node TLS cert (auto-generated self-signed if missing)
 //	SSL_KEY_FILE              node TLS key
 //	XRAY_EXECUTABLE_PATH      xray binary (consumed by config.Load)

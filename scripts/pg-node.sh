@@ -179,8 +179,10 @@ PG_AGENT_CORE_KEY=$core
 PG_AGENT_TENANT_DB=$DATA_DIR/tenants.bolt
 PG_AGENT_FIXED_CONFIG=$FIXED_CONFIG_FILE
 PG_AGENT_ENFORCE_INTERVAL=10s
-# Apply every customer's users to these inbound tags regardless of what their
-# panel sends (must match a tag in the fixed config above).
+# Optional override: pin every customer's users to these inbound tags regardless
+# of what their panel sends. Leave empty to auto-derive the proxy inbound tags
+# from the running core config (recommended: keeps working after you push a new
+# config with different inbound tags from your PasarGuard panel).
 PG_AGENT_FORCE_INBOUNDS=$force_inbounds
 SSL_CERT_FILE=$SSL_CERT_FILE
 SSL_KEY_FILE=$SSL_KEY_FILE
@@ -250,7 +252,11 @@ self_update_script() {
 # ---------- commands ----------
 install_command() {
     check_root; require_systemd
-    local master="" core="" http_port="8090" grpc_port="62050" version="latest" force_inbounds="vless-in"
+    # force_inbounds is empty by default: the agent auto-derives the proxy inbound
+    # tags from the running core config, so users land on the real inbound(s) even
+    # after the operator pushes a custom config from their panel. Set it only to
+    # pin users to a subset of the node's proxy inbounds.
+    local master="" core="" http_port="8090" grpc_port="62050" version="latest" force_inbounds=""
     while [[ $# -gt 0 ]]; do case "$1" in
         --master-key) master="$2"; shift 2 ;;
         --core-key) core="$2"; shift 2 ;;
@@ -271,7 +277,9 @@ install_command() {
     [ -z "$master" ] && master="$(gen_key)"
     # Generate a core key by default so the operator can manage the Xray core
     # from their own PasarGuard panel out of the box (only this key may push config).
-    [ -z "$core" ] && core="$(gen_key)"
+    # It MUST be a UUID: a PasarGuard panel validates a node's API key as a UUID
+    # and rejects anything else, so a hex key can't be used to add the node there.
+    [ -z "$core" ] && core="$(gen_uuid)"
 
     detect_os; detect_arch
     need curl curl; need openssl openssl; need tar tar

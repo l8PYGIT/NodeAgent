@@ -130,6 +130,7 @@ func (x *Xray) SyncUser(ctx context.Context, user *common.User) error {
 
 	userInbounds := user.GetInbounds()
 
+	matched := 0
 	for _, inbound := range inbounds {
 		if inbound.exclude {
 			continue
@@ -138,6 +139,7 @@ func (x *Xray) SyncUser(ctx context.Context, user *common.User) error {
 		_ = handler.RemoveInboundUser(ctx, inbound.Tag, user.Email)
 		account, isActive := isActiveInbound(inbound, userInbounds, proxySetting)
 		if isActive {
+			matched++
 			inbound.updateUser(account)
 			err = handler.AddInboundUser(ctx, inbound.Tag, accountForAPI(inbound, account))
 			if err != nil {
@@ -147,6 +149,14 @@ func (x *Xray) SyncUser(ctx context.Context, user *common.User) error {
 		} else {
 			inbound.removeUser(user.GetEmail())
 		}
+	}
+
+	// A user that matches no inbound is added nowhere: the client will connect
+	// and get EOF because its credential is not registered on any inbound. This
+	// is silent otherwise, so surface it — it usually means the user's inbound
+	// tags do not match any inbound tag in the running core config.
+	if matched == 0 {
+		log.Printf("user %q matched no inbound (requested tags %v); client will fail to connect", user.GetEmail(), userInbounds)
 	}
 
 	if errMessage != "" {

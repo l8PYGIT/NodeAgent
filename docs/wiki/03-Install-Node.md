@@ -38,7 +38,7 @@ Node certificate (paste into the main panel when adding the node):
 | `--core-key KEY` | تولید خودکار | کلید مدیریت هسته از پنل PasarGuard خودت (پیش‌فرض ساخته می‌شود) |
 | `--http-port PORT` | `8090` | پورت API کنترلی (HTTPS) |
 | `--grpc-port PORT` | `62050` | پورت gRPC |
-| `--force-inbounds CSV` | `vless-in` | کاربرهای هر مشتری روی این inbound tag(ها) اعمال شوند (باید با تگ کانفیگ ثابت بخورد) |
+| `--force-inbounds CSV` | _(خالی)_ | override اختیاری: کاربرهای هر مشتری روی این inbound tag(ها) اعمال شوند. خالی = استخراج خودکار از کانفیگ در حال اجرا (پیشنهادی) |
 | `--san-entries CSV` | — | SANهای اضافی گواهی، مثلاً `DNS:node.example.com` |
 | `--version vX.Y.Z` | latest | نصب نسخه‌ی مشخص |
 | `--name NAME` | `pg-node-agent` | نام نمونه — برای نصب **کنار نود رسمی PasarGuard** |
@@ -50,7 +50,7 @@ Node certificate (paste into the main panel when adding the node):
 
 > 📌 **راهنمای کامل تنظیم هسته (نمونه‌ی Reality/WS، تولید کلید، چه چیزی به مشتری بده):** [تنظیم هسته‌ی نود](10-Configure-Core).
 
-> **مهم:** هر inbound در این کانفیگ که می‌خواهی کاربرهای مشتری رویش بنشینند باید تگش در `--force-inbounds` باشد و تنظیماتش (port/SNI/شبکه) را به مشتری بدهی تا لینک‌های کاربر نهایی کار کنند.
+> **مهم:** کاربرهای مشتری به‌صورت خودکار روی proxy inboundهای واقعی نود (استخراج‌شده از کانفیگ در حال اجرا) نشانده می‌شوند، پس حتی بعد از پوش کردن کانفیگ جدید با تگ متفاوت هم کار می‌کنند. فقط باید تنظیمات هر inbound (port/SNI/شبکه) را به مشتری بدهی تا لینک‌های کاربر نهایی کار کنند. از `--force-inbounds` فقط برای محدود کردن کاربرها به زیرمجموعه‌ای از inboundها استفاده کن.
 
 ## دستورهای مدیریتی
 ```bash

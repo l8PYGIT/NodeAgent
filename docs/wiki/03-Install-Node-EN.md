@@ -33,7 +33,7 @@ Node certificate (paste into the main panel when adding the node):
 | `--core-key KEY` | auto-generated | Key to manage the core from your PasarGuard panel |
 | `--http-port PORT` | `8090` | HTTP control port (HTTPS) |
 | `--grpc-port PORT` | `62050` | gRPC port |
-| `--force-inbounds CSV` | `vless-in` | Apply every customer's users to these inbound tags (must match a tag in the fixed config) |
+| `--force-inbounds CSV` | _(empty)_ | Optional override: pin every customer's users to these inbound tags. Empty = auto-derive from the running config (recommended) |
 | `--san-entries CSV` | — | Extra cert SANs, e.g. `DNS:node.example.com` |
 | `--version vX.Y.Z` | latest | Install a specific release |
 | `--name NAME` | `pg-node-agent` | Instance name — to install **alongside the official PasarGuard node** |
@@ -45,7 +45,7 @@ A default fixed config is created at `/var/lib/pg-node-agent/fixed-config.json` 
 
 > 📌 **Full core-config guide (Reality/WS examples, key generation, what to give the customer):** [Configure the node core](10-Configure-Core-EN).
 
-> **Important:** any inbound you want customer users to land on must have its tag listed in `--force-inbounds`, and you must give its settings (port/SNI/network) to the customer so end-user links work.
+> **Important:** customer users are automatically pinned to the node's real proxy inbounds (derived from the running config), so they keep working even after you push a new config with different inbound tags. You still must give each inbound's settings (port/SNI/network) to the customer so end-user links work. Use `--force-inbounds` only to restrict users to a subset of inbounds.
 
 ## Management commands
 ```bash
