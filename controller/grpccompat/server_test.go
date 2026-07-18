@@ -91,6 +91,43 @@ func TestGRPCSyncUsersIsNoop(t *testing.T) {
 	}
 }
 
+// TestGRPCGetLogsStaysOpen verifies the log stream blocks until the client
+// cancels instead of returning EOF immediately. A PasarGuard panel treats an
+// immediate EOF on GetLogs as the node connection dropping, which triggers a
+// reconnect loop and "EOF" errors against the customer's users.
+func TestGRPCGetLogsStaysOpen(t *testing.T) {
+	reg, _ := tenant.NewRegistry(tenant.NewMemStore())
+	authn := tenant.NewAuthenticator("master", reg)
+	client := startBufServer(t, New(shared.NewManager(&config.Config{}, reg), authn, "core-secret"))
+
+	ctx, cancel := context.WithCancel(authCtx("core-secret"))
+	stream, err := client.GetLogs(ctx, &common.Empty{})
+	if err != nil {
+		t.Fatalf("GetLogs open failed: %v", err)
+	}
+
+	// The stream must not close on its own; Recv should block until we cancel.
+	recvErr := make(chan error, 1)
+	go func() {
+		_, err := stream.Recv()
+		recvErr <- err
+	}()
+
+	select {
+	case err := <-recvErr:
+		t.Fatalf("GetLogs closed on its own (got %v); it must stay open until the client cancels", err)
+	case <-time.After(200 * time.Millisecond):
+		// Good: still open.
+	}
+
+	cancel()
+	select {
+	case <-recvErr: // stream closed after we cancelled — expected
+	case <-time.After(2 * time.Second):
+		t.Fatal("GetLogs did not close after client cancellation")
+	}
+}
+
 func TestGRPCTenantKeyProvisionsUsers(t *testing.T) {
 	reg, _ := tenant.NewRegistry(tenant.NewMemStore())
 	if _, err := reg.CreateTenant(tenant.CreateParams{ID: "t1", APIKey: "cust-key", QuotaBytes: 1 << 30}); err != nil {

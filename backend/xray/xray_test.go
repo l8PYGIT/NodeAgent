@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"testing"
 	"time"
 
@@ -17,12 +18,29 @@ import (
 
 var (
 	jsonFile       = "./config.json"
-	executablePath = "/usr/local/bin/xray"
-	assetsPath     = "/usr/local/share/xray"
+	executablePath = envOr("XRAY_EXECUTABLE_PATH", "/usr/local/bin/xray")
+	assetsPath     = envOr("XRAY_ASSETS_PATH", "/usr/local/share/xray")
 	configPath     = "../../generated/"
 )
 
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// requireXray skips tests that need a real Xray binary when none is available
+// (mirrors the skip behavior of the shared-core tests).
+func requireXray(t *testing.T) {
+	t.Helper()
+	if _, err := os.Stat(executablePath); err != nil {
+		t.Skipf("xray executable not found at %s (set XRAY_EXECUTABLE_PATH); skipping", executablePath)
+	}
+}
+
 func TestXrayBackend(t *testing.T) {
+	requireXray(t)
 	xrayFile, err := fsutil.ReadFileAsString(jsonFile)
 	if err != nil {
 		t.Fatal(err)
@@ -156,6 +174,7 @@ loop:
 }
 
 func TestGetOutboundsLatencyWithRealXray(t *testing.T) {
+	requireXray(t)
 	xrayFile, err := fsutil.ReadFileAsString(jsonFile)
 	if err != nil {
 		t.Fatal(err)

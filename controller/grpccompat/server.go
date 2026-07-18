@@ -295,6 +295,12 @@ func (s *Server) GetUserOnlineIpListStats(context.Context, *common.StatRequest) 
 	return &common.StatsOnlineIpListResponse{}, nil
 }
 
-func (s *Server) GetLogs(_ *common.Empty, _ grpc.ServerStreamingServer[common.Log]) error {
-	return nil // empty log stream
+// GetLogs holds the stream open (sending no log lines) until the client
+// disconnects. Returning immediately would close the stream with io.EOF, which a
+// PasarGuard panel treats as the node connection dropping — causing a reconnect
+// loop and "EOF" errors against the customer's users. Blocking mirrors the real
+// node's GetLogs, which streams until the client cancels.
+func (s *Server) GetLogs(_ *common.Empty, stream grpc.ServerStreamingServer[common.Log]) error {
+	<-stream.Context().Done()
+	return nil
 }
