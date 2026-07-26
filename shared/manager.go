@@ -20,6 +20,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/curve25519"
 
@@ -29,6 +30,11 @@ import (
 	"github.com/pasarguard/node/pkg/netutil"
 	"github.com/pasarguard/node/tenant"
 )
+
+// statsTimeout bounds the traffic-stats RPC to the Xray API. The enforcement
+// loop runs with the agent's root context, which has no deadline, so without
+// this a wedged API socket would stall accounting indefinitely.
+const statsTimeout = 5 * time.Second
 
 // Manager owns the single shared Xray core and routes per-tenant user
 // operations to it.
@@ -94,6 +100,43 @@ func (m *Manager) buildUser(tenantID string, u *common.User) *common.User {
 	}
 }
 
+// pinnedForCore re-resolves a user's inbound tags at APPLY time.
+//
+// buildUser pins the tags when a user is first synced, and the result is what
+// lives in m.users. That snapshot goes stale the moment the running config
+// changes: ApplyConfig re-derives m.autoInbounds from the new config but then
+// re-applies the STORED users, which still carry the previous config's tags. So
+// after an operator pushed a config whose inbound is tagged differently, every
+// already-provisioned user was re-synced onto a tag that no longer exists,
+// matched zero inbounds, and every end-user got EOF — the exact outage the
+// auto-derivation was meant to end.
+//
+// Resolving here means the tags are correct for whatever config is actually
+// running, on every path that touches the core. With no effective tags at all
+// the user is left untouched: withInbounds(u, nil) means "remove from every
+// inbound", which must never be an accident of an empty derivation.
+func (m *Manager) pinnedForCore(u *common.User) *common.User {
+	eff := m.effectiveInbounds()
+	if len(eff) == 0 || sameTags(u.GetInbounds(), eff) {
+		return u
+	}
+	return withInbounds(u, eff)
+}
+
+// sameTags reports whether two inbound tag lists are identical in order and
+// content, so an unchanged user is not needlessly copied.
+func sameTags(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // userCredentials returns the protocol credentials a user carries. Credentials
 // must be globally unique on a node: in a shared inbound the uuid/password is the
 // actual authentication secret, so a collision across tenants would break both
@@ -138,21 +181,49 @@ func (m *Manager) ApplyConfig(ctx context.Context, configJSON string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Validate BEFORE tearing anything down. Parsing used to happen inside
+	// startCoreLocked, i.e. after the running core had already been stopped, so
+	// a config with a typo left every tenant on the node serving nothing until
+	// a human noticed and called /admin/core/start.
+	if _, err := xray.NewConfig(configJSON, nil); err != nil {
+		return fmt.Errorf("parse config: %w", err)
+	}
+
+	previous := m.config
 	m.stopLocked()
 	if err := m.startCoreLocked(ctx, configJSON); err != nil {
+		// The new config parsed but the core would not come up with it (a port
+		// already bound, a bad certificate path...). Restore the previous one so
+		// the node keeps serving instead of going dark on a rejected push.
+		if previous != "" {
+			if rbErr := m.startCoreLocked(ctx, previous); rbErr != nil {
+				log.Printf("shared core: CRITICAL: new config failed (%v) and rollback to the previous config also failed: %v", err, rbErr)
+			} else {
+				log.Printf("shared core: new config failed to start (%v); rolled back to the previous config", err)
+				m.reapplyActiveTenantsLocked(ctx)
+			}
+		}
 		return err
 	}
 
+	m.reapplyActiveTenantsLocked(ctx)
+	return nil
+}
+
+// reapplyActiveTenantsLocked re-adds every active tenant's users to the running
+// core. Callers hold m.mu. A single tenant's failure is logged rather than
+// returned: the config is already live, and abandoning the loop would leave the
+// remaining tenants' users absent from the core with no retry.
+func (m *Manager) reapplyActiveTenantsLocked(ctx context.Context) {
 	for tenantID := range m.users {
 		tn, ok := m.reg.Get(tenantID)
 		if !ok || tn.Status != tenant.StatusActive {
 			continue
 		}
 		if err := m.addTenantToCore(ctx, tenantID); err != nil {
-			return err
+			log.Printf("shared core: re-applying users of tenant %s after config change: %v", tenantID, err)
 		}
 	}
-	return nil
 }
 
 func (m *Manager) startCoreLocked(ctx context.Context, configJSON string) error {
@@ -170,11 +241,42 @@ func (m *Manager) startCoreLocked(ctx context.Context, configJSON string) error 
 	}
 	m.core = core
 	m.config = configJSON
+	// A fresh core process starts every traffic counter at zero, so the previous
+	// baselines are meaningless — and this is the one point where dropping them
+	// is correct. It also bounds the map to the lifetime of one core.
+	m.lastSeen = make(map[string]int64, len(m.lastSeen))
 	m.autoInbounds = proxyInboundTags(configJSON)
+	m.warnIfInboundsUnusableLocked()
+	return nil
+}
+
+// warnIfInboundsUnusableLocked logs loudly when the tags users will be pinned to
+// match nothing in the running config — the state in which every end-user
+// connects and immediately gets EOF, with no error surfacing anywhere else.
+// Callers hold m.mu.
+func (m *Manager) warnIfInboundsUnusableLocked() {
 	if len(m.forceInbounds) == 0 && len(m.autoInbounds) == 0 {
 		log.Printf("shared core: warning: config has no proxy inbounds; tenant users will match no inbound and clients will fail to connect")
+		return
 	}
-	return nil
+	// An operator override suppresses auto-derivation entirely, so a config
+	// whose inbound tags differ from the override reintroduces exactly the
+	// failure auto-derivation exists to prevent — silently, because the override
+	// looks deliberate. Check it against the config actually running.
+	if len(m.forceInbounds) > 0 {
+		real := make(map[string]bool, len(m.autoInbounds))
+		for _, tag := range m.autoInbounds {
+			real[tag] = true
+		}
+		for _, tag := range m.forceInbounds {
+			if real[tag] {
+				return
+			}
+		}
+		log.Printf("shared core: warning: PG_AGENT_FORCE_INBOUNDS=%v matches no proxy inbound in the running config (config has %v); "+
+			"tenant users will match no inbound and clients will fail to connect. Unset the override to auto-derive tags.",
+			m.forceInbounds, m.autoInbounds)
+	}
 }
 
 // proxyInboundTags returns the tags of every proxy inbound in a core config.
@@ -401,13 +503,20 @@ func (m *Manager) SetTenantUsers(ctx context.Context, tenantID string, users []*
 	}
 
 	// Remove users that are no longer present.
+	//
+	// lastSeen is deliberately KEPT. It is the baseline for the cumulative
+	// counter Xray holds for that email, and Xray never unregisters a counter
+	// while the process lives. Dropping the baseline meant a user who was
+	// deleted and recreated — routine when a panel rotates a UUID — came back
+	// with lastSeen=0 against a counter still reading its lifetime total, so the
+	// whole history was re-added as one delta and the tenant was billed twice.
+	// The baseline is reset where it is actually invalidated: at core start.
 	for email, u := range m.users[tenantID] {
 		if _, keep := newSet[email]; keep {
 			continue
 		}
 		_ = m.removeFromCore(ctx, u)
 		delete(m.emailTo, email)
-		delete(m.lastSeen, email)
 		for _, cred := range userCredentials(u) {
 			delete(m.creds, cred)
 		}
@@ -420,7 +529,7 @@ func (m *Manager) SetTenantUsers(ctx context.Context, tenantID string, users []*
 			m.creds[cred] = email
 		}
 		if active && m.core != nil {
-			if err := m.core.SyncUser(ctx, u); err != nil {
+			if err := m.core.SyncUser(ctx, m.pinnedForCore(u)); err != nil {
 				return fmt.Errorf("sync user %q: %w", email, err)
 			}
 		}
@@ -461,7 +570,7 @@ func (m *Manager) AddTenantUsers(ctx context.Context, tenantID string, users []*
 			m.creds[cred] = ne
 		}
 		if active && m.core != nil {
-			if err := m.core.SyncUser(ctx, nu); err != nil {
+			if err := m.core.SyncUser(ctx, m.pinnedForCore(nu)); err != nil {
 				return fmt.Errorf("sync user %q: %w", ne, err)
 			}
 		}
@@ -500,9 +609,12 @@ func (m *Manager) DeleteTenant(ctx context.Context, tenantID string) error {
 	if err := m.reg.Delete(tenantID); err != nil {
 		return err
 	}
+	// lastSeen is kept for the same reason as in SetTenantUsers: Xray's counter
+	// for these emails survives, so a tenant recreated under the same id must
+	// not re-import its own history as fresh usage. The map is cleared when the
+	// core restarts, which is when the counters actually go back to zero.
 	for email, u := range m.users[tenantID] {
 		delete(m.emailTo, email)
-		delete(m.lastSeen, email)
 		for _, cred := range userCredentials(u) {
 			delete(m.creds, cred)
 		}
@@ -515,9 +627,27 @@ func (m *Manager) DeleteTenant(ctx context.Context, tenantID string) error {
 // quota/expiry enforcement, and removes suspended tenants' users from the core.
 // It is intended to be called periodically by a background loop.
 func (m *Manager) CollectAndEnforce(ctx context.Context, now int64) error {
+	// Snapshot the core handle under the lock, then make the RPC WITHOUT it.
+	// This call used to run with m.mu held and no deadline: a half-open Xray API
+	// socket blocked it forever while every tenant sync, /health and /admin call
+	// piled up behind the same mutex, leaving the agent dead while Xray kept
+	// serving traffic unmetered.
+	m.mu.Lock()
+	core := m.core
+	m.mu.Unlock()
+	if core == nil {
+		return nil
+	}
+
+	statsCtx, cancel := context.WithTimeout(ctx, statsTimeout)
+	defer cancel()
+	resp, err := core.GetStats(statsCtx, &common.StatRequest{
+		Type:   common.StatType_UsersStat,
+		Reset_: false,
+	})
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
 	if m.core == nil {
 		return nil
 	}
@@ -525,10 +655,6 @@ func (m *Manager) CollectAndEnforce(ctx context.Context, now int64) error {
 	// Read absolute cumulative per-user counters WITHOUT resetting, so an
 	// external panel (PasarGuard) can also read them. We track the last value
 	// per user and add only the delta to the tenant's usage.
-	resp, err := m.core.GetStats(ctx, &common.StatRequest{
-		Type:   common.StatType_UsersStat,
-		Reset_: false,
-	})
 	if err == nil && resp != nil {
 		current := make(map[string]int64)
 		for _, s := range resp.GetStats() {
@@ -602,14 +728,23 @@ func (m *Manager) removeTenantFromCore(ctx context.Context, tenantID string) {
 	}
 }
 
+// addTenantToCore (re)applies a tenant's users to the running core, re-pinning
+// each user's inbound tags to the CURRENT config first. This is the path taken
+// by ApplyConfig, ResumeTenant, core start/restart and the Xray version switch,
+// i.e. exactly the moments when the running config may have changed underneath
+// the stored users.
 func (m *Manager) addTenantToCore(ctx context.Context, tenantID string) error {
 	if m.core == nil {
 		return nil
 	}
 	for email, u := range m.users[tenantID] {
-		if err := m.core.SyncUser(ctx, u); err != nil {
+		pinned := m.pinnedForCore(u)
+		if err := m.core.SyncUser(ctx, pinned); err != nil {
 			return fmt.Errorf("sync user %q: %w", email, err)
 		}
+		// Keep the stored copy in step with what the core now holds, so later
+		// removals target the same inbounds the user was actually added to.
+		m.users[tenantID][email] = pinned
 	}
 	return nil
 }

@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/pasarguard/node/common"
+	"github.com/pasarguard/node/controller"
 	"github.com/pasarguard/node/pkg/sysstats"
 	"github.com/pasarguard/node/shared"
 	"github.com/pasarguard/node/tenant"
@@ -51,10 +52,13 @@ type Server struct {
 	mgr     *shared.Manager
 	authn   *tenant.Authenticator
 	coreKey string
+	// shutdown is closed when the server is stopping, so deliberately blocking
+	// stream handlers can return instead of holding GracefulStop forever.
+	shutdown chan struct{}
 }
 
 func New(mgr *shared.Manager, authn *tenant.Authenticator, coreKey string) *Server {
-	return &Server{mgr: mgr, authn: authn, coreKey: coreKey}
+	return &Server{mgr: mgr, authn: authn, coreKey: coreKey, shutdown: make(chan struct{})}
 }
 
 type scopeKind int
@@ -94,8 +98,36 @@ func Serve(tlsConfig *tls.Config, addr string, srv *Server) (func(), error) {
 			log.Printf("grpc compat server stopped: %v", err)
 		}
 	}()
-	return gs.GracefulStop, nil
+
+	// Shut down with a bounded wait.
+	//
+	// GracefulStop blocks until every in-flight RPC returns and does NOT cancel
+	// their contexts. GetLogs deliberately blocks until its client goes away, and
+	// a panel normally holds it open — so a bare GracefulStop never returned:
+	// SIGTERM hung the agent until systemd's 90s timeout SIGKILLed it, skipping
+	// every deferred cleanup and stalling each restart, including the one the
+	// self-update performs.
+	stop := func() {
+		// Tell streaming handlers to wind up, so they can return before the
+		// forced stop below.
+		close(srv.shutdown)
+		done := make(chan struct{})
+		go func() {
+			gs.GracefulStop()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(gracefulStopTimeout):
+			log.Printf("grpc compat server: graceful stop timed out after %s; forcing", gracefulStopTimeout)
+			gs.Stop()
+		}
+	}
+	return stop, nil
 }
+
+// gracefulStopTimeout bounds how long shutdown waits for in-flight RPCs.
+const gracefulStopTimeout = 5 * time.Second
 
 // --- auth ---
 
@@ -230,44 +262,67 @@ func (s *Server) SyncUsers(ctx context.Context, u *common.Users) (*common.Empty,
 }
 
 // SyncUser streams individual user updates; for a tenant they are merged in.
+//
+// Each user is applied AS IT ARRIVES. A customer's panel keeps this stream open
+// and pushes incremental updates over it, so buffering until io.EOF meant a
+// newly created user did not exist on the node until the stream happened to
+// close — their client just got EOF in the meantime — and a stream that died
+// with any non-EOF error silently discarded everything it had buffered.
 func (s *Server) SyncUser(stream grpc.ClientStreamingServer[common.User, common.Empty]) error {
 	ci := caller(stream.Context())
-	var users []*common.User
 	for {
 		u, err := stream.Recv()
 		if err != nil {
 			if err == io.EOF {
-				if ci.scope == scopeTenant && len(users) > 0 {
-					if e := s.mgr.AddTenantUsers(stream.Context(), ci.tenantID, users); e != nil {
-						return status.Errorf(codes.Internal, "apply users: %v", e)
-					}
-				}
 				return stream.SendAndClose(&common.Empty{})
 			}
 			return err
 		}
-		users = append(users, u)
+		if ci.scope != scopeTenant || u == nil {
+			continue
+		}
+		if e := s.mgr.AddTenantUsers(stream.Context(), ci.tenantID, []*common.User{u}); e != nil {
+			return status.Errorf(codes.Internal, "apply user: %v", e)
+		}
 	}
 }
 
 // SyncUsersChunked accumulates all chunks and replaces the tenant's user set.
+//
+// The replace is destructive, so the chunk sequence must be proven complete
+// first: chunks are keyed by index and validated by BuildUsersFromChunks, which
+// rejects a missing final marker, gaps in the indices, and an empty result.
+// Without that, a stream truncated after chunk 0 (a client-side abort that
+// still closes cleanly) was treated as the tenant's entire user set and
+// silently removed everyone who was not in it.
 func (s *Server) SyncUsersChunked(stream grpc.ClientStreamingServer[common.UsersChunk, common.Empty]) error {
 	ci := caller(stream.Context())
-	var users []*common.User
+	chunks := make(map[uint64][]*common.User)
+	var lastIndex uint64
+	var sawLast bool
 	for {
 		c, err := stream.Recv()
 		if err != nil {
-			if err == io.EOF {
-				if ci.scope == scopeTenant {
-					if e := s.mgr.SetTenantUsers(stream.Context(), ci.tenantID, users); e != nil {
-						return status.Errorf(codes.Internal, "apply users: %v", e)
-					}
-				}
+			if err != io.EOF {
+				return err
+			}
+			if ci.scope != scopeTenant {
 				return stream.SendAndClose(&common.Empty{})
 			}
-			return err
+			users, buildErr := controller.BuildUsersFromChunks(chunks, lastIndex, sawLast)
+			if buildErr != nil {
+				return status.Errorf(codes.InvalidArgument, "incomplete user chunks: %v", buildErr)
+			}
+			if e := s.mgr.SetTenantUsers(stream.Context(), ci.tenantID, users); e != nil {
+				return status.Errorf(codes.Internal, "apply users: %v", e)
+			}
+			return stream.SendAndClose(&common.Empty{})
 		}
-		users = append(users, c.GetUsers()...)
+		chunks[c.GetIndex()] = c.GetUsers()
+		if c.GetLast() {
+			lastIndex = c.GetIndex()
+			sawLast = true
+		}
 	}
 }
 
@@ -300,7 +355,15 @@ func (s *Server) GetUserOnlineIpListStats(context.Context, *common.StatRequest) 
 // PasarGuard panel treats as the node connection dropping — causing a reconnect
 // loop and "EOF" errors against the customer's users. Blocking mirrors the real
 // node's GetLogs, which streams until the client cancels.
+//
+// It also returns when the server is shutting down: GracefulStop waits for
+// in-flight RPCs without cancelling them, so a handler that only watched the
+// stream context would keep a connected panel's stream — and therefore the
+// whole shutdown — open indefinitely.
 func (s *Server) GetLogs(_ *common.Empty, stream grpc.ServerStreamingServer[common.Log]) error {
-	<-stream.Context().Done()
+	select {
+	case <-stream.Context().Done():
+	case <-s.shutdown:
+	}
 	return nil
 }

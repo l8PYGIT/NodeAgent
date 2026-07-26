@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"regexp"
@@ -53,9 +54,17 @@ func Load() (*Config, error) {
 		cfg.LogBufferSize = 1
 	}
 
+	// API_KEY must be a real UUID. GetEnvAsUUID returns uuid.Nil on failure, and
+	// the REST/gRPC middlewares compare the presented key against whatever is
+	// here — so merely logging the error left a node that accepts the nil UUID
+	// (00000000-0000-0000-0000-000000000000) from anyone who can reach the port,
+	// granting full control of the core. Fail to load instead.
 	cfg.ApiKey, err = GetEnvAsUUID("API_KEY")
 	if err != nil {
-		log.Printf("[Error] Failed to load API Key, error: %v", err)
+		return nil, fmt.Errorf("API_KEY must be a valid UUID: %w", err)
+	}
+	if cfg.ApiKey == uuid.Nil {
+		return nil, fmt.Errorf("API_KEY must not be the nil UUID")
 	}
 
 	nodeHostStr := GetEnv("NODE_HOST", "0.0.0.0")
@@ -72,12 +81,25 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-// NewTestConfig creates a config for testing
+// NewTestConfig creates a config for testing. It does NOT go through Load,
+// which validates API_KEY and fails without one — tests supply the key directly.
 func NewTestConfig(generatedConfigPath string, key uuid.UUID) *Config {
-	cfg, _ := Load()
-	cfg.GeneratedConfigPath = generatedConfigPath
-	cfg.ApiKey = key
-	return cfg
+	return &Config{
+		ServicePort:                 GetEnvAsInt("SERVICE_PORT", 62050),
+		NodeHost:                    "127.0.0.1",
+		XrayExecutablePath:          GetEnv("XRAY_EXECUTABLE_PATH", "/usr/local/bin/xray"),
+		XrayAssetsPath:              GetEnv("XRAY_ASSETS_PATH", "/usr/local/share/xray"),
+		SslCertFile:                 GetEnv("SSL_CERT_FILE", "/var/lib/pg-node/certs/ssl_cert.pem"),
+		SslKeyFile:                  GetEnv("SSL_KEY_FILE", "/var/lib/pg-node/certs/ssl_key.pem"),
+		GeneratedConfigPath:         generatedConfigPath,
+		ServiceProtocol:             GetEnv("SERVICE_PROTOCOL", "grpc"),
+		Debug:                       GetEnvAsBool("DEBUG", false),
+		LogBufferSize:               GetEnvAsInt("LOG_BUFFER_SIZE", 10000),
+		StartupLogTailSize:          GetEnvAsInt("STARTUP_LOG_TAIL_SIZE", 200),
+		StatsUpdateIntervalSeconds:  GetEnvAsInt("STATS_UPDATE_INTERVAL_SECONDS", 10),
+		StatsCleanupIntervalSeconds: GetEnvAsInt("STATS_CLEANUP_INTERVAL_SECONDS", 300),
+		ApiKey:                      key,
+	}
 }
 
 func GetEnv(key, fallback string) string {

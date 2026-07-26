@@ -55,6 +55,28 @@ func (s *Server) getInbounds(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(doc))
 }
 
+// validTenantID constrains tenant ids to characters that keep user namespacing
+// unambiguous.
+//
+// Users are stored as "t<tenantID>.<email>". With a dot allowed in the id, that
+// mapping is not injective: tenant "a" with user "b.x" and tenant "a.b" with
+// user "x" both produce "ta.b.x". They would then overwrite each other's user
+// records and traffic attribution, and the prefix-based stats filter would let
+// one tenant read the other's usage.
+func validTenantID(id string) bool {
+	if id == "" || len(id) > 64 {
+		return false
+	}
+	for _, r := range id {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r == '-', r == '_':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 type createTenantRequest struct {
 	ID               string `json:"id"`
 	APIKey           string `json:"api_key"`
@@ -72,6 +94,11 @@ func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ID == "" || req.APIKey == "" {
 		writeError(w, http.StatusBadRequest, "id and api_key are required")
+		return
+	}
+	if !validTenantID(req.ID) {
+		writeError(w, http.StatusBadRequest,
+			"id must be 1-64 characters of letters, digits, '-' or '_' (no dots: they would make user namespacing ambiguous)")
 		return
 	}
 

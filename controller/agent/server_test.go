@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/pasarguard/node/config"
@@ -65,6 +66,50 @@ func TestAuthScopes(t *testing.T) {
 	// Master key on tenant route -> forbidden scope.
 	if rr := do(t, h, http.MethodGet, "/tenant/me", "master-key", nil); rr.Code != http.StatusForbidden {
 		t.Errorf("master key on tenant route: got %d, want 403", rr.Code)
+	}
+}
+
+// Users are stored as "t<tenantID>.<email>", so a dot in a tenant id makes that
+// mapping ambiguous: tenant "a" with user "b.x" and tenant "a.b" with user "x"
+// both map to "ta.b.x". They would overwrite each other's user records and
+// traffic attribution, and the prefix-based stats filter would leak one
+// tenant's usage to the other. Such ids are refused at creation.
+func TestCreateTenantRejectsAmbiguousID(t *testing.T) {
+	srv := newTestServer(t)
+	h := srv.Router()
+
+	for _, id := range []string{"a.b", "has space", "has/slash", "", strings.Repeat("x", 65)} {
+		rr := do(t, h, http.MethodPost, "/admin/tenants", "master-key", map[string]any{
+			"id": id, "api_key": "k-" + id,
+		})
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("create tenant id=%q: got %d, want 400", id, rr.Code)
+		}
+	}
+
+	// Ordinary ids still work.
+	for _, id := range []string{"t1", "cust-42", "a_b", strings.Repeat("x", 64)} {
+		rr := do(t, h, http.MethodPost, "/admin/tenants", "master-key", map[string]any{
+			"id": id, "api_key": "key-" + id,
+		})
+		if rr.Code != http.StatusCreated {
+			t.Errorf("create tenant id=%q: got %d body=%s, want 201", id, rr.Code, rr.Body.String())
+		}
+	}
+}
+
+func TestValidTenantID(t *testing.T) {
+	valid := []string{"t1", "A", "cust-42", "a_b", "0", strings.Repeat("x", 64)}
+	for _, id := range valid {
+		if !validTenantID(id) {
+			t.Errorf("validTenantID(%q) = false, want true", id)
+		}
+	}
+	invalid := []string{"", "a.b", "a b", "a/b", "a:b", strings.Repeat("x", 65)}
+	for _, id := range invalid {
+		if validTenantID(id) {
+			t.Errorf("validTenantID(%q) = true, want false", id)
+		}
 	}
 }
 
