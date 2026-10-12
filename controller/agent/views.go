@@ -57,6 +57,7 @@ type usageViewModel struct {
 	RemainBytes  int64  `json:"remaining_bytes"`
 	CreditLimit  int64  `json:"credit_limit_bytes"`
 	ExpireAt     int64  `json:"expire_at"`
+	ActiveUsers  int    `json:"active_users"`
 }
 
 func usageView(t *tenant.Tenant) usageViewModel {

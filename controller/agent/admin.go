@@ -217,7 +217,11 @@ func (s *Server) tenantUsage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "tenant not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, usageView(tn))
+	uv := usageView(tn)
+	if s.mgr != nil {
+		uv.ActiveUsers = s.mgr.TenantUserCount(id)
+	}
+	writeJSON(w, http.StatusOK, uv)
 }
 
 func writeNotFoundOr500(w http.ResponseWriter, err error) {
