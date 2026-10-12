@@ -258,3 +258,154 @@ func TestBoltPersistence(t *testing.T) {
 		t.Fatalf("authorize after reopen should be allowed, got %+v", d)
 	}
 }
+
+func TestTenantWithExtendedLimits(t *testing.T) {
+	r := newTestRegistry(t)
+	tn := mustCreate(t, r, CreateParams{
+		ID:              "t-ext",
+		APIKey:          "key-ext",
+		QuotaBytes:      1000,
+		AllowedInbounds: []string{"vless-reality", "trojan-ws"},
+		MaxUsers:        25,
+		CoreType:        "dedicated",
+		MaxIPs:          2,
+		SpeedLimitMbps:  15,
+		Domains:         []string{"tenant.example.com"},
+		InternalPort:    10443,
+	})
+
+	if tn.MaxUsers != 25 {
+		t.Errorf("MaxUsers = %d, want 25", tn.MaxUsers)
+	}
+	if tn.CoreType != "dedicated" {
+		t.Errorf("CoreType = %q, want %q", tn.CoreType, "dedicated")
+	}
+	if tn.MaxIPs != 2 {
+		t.Errorf("MaxIPs = %d, want 2", tn.MaxIPs)
+	}
+	if tn.SpeedLimitMbps != 15 {
+		t.Errorf("SpeedLimitMbps = %d, want 15", tn.SpeedLimitMbps)
+	}
+	if tn.InternalPort != 10443 {
+		t.Errorf("InternalPort = %d, want 10443", tn.InternalPort)
+	}
+	if len(tn.AllowedInbounds) != 2 || tn.AllowedInbounds[0] != "vless-reality" || tn.AllowedInbounds[1] != "trojan-ws" {
+		t.Errorf("AllowedInbounds = %v, want [vless-reality trojan-ws]", tn.AllowedInbounds)
+	}
+	if len(tn.Domains) != 1 || tn.Domains[0] != "tenant.example.com" {
+		t.Errorf("Domains = %v, want [tenant.example.com]", tn.Domains)
+	}
+
+	// Verify default CoreType is "shared" when empty
+	tnDefault := mustCreate(t, r, CreateParams{
+		ID:     "t-default",
+		APIKey: "key-default",
+	})
+	if tnDefault.CoreType != "shared" {
+		t.Errorf("default CoreType = %q, want %q", tnDefault.CoreType, "shared")
+	}
+
+	// Verify clone deep copy: mutating returned slice does not mutate registry state
+	tn.AllowedInbounds[0] = "mutated-inbound"
+	tn.Domains[0] = "mutated.example.com"
+	fromReg, ok := r.Get("t-ext")
+	if !ok {
+		t.Fatal("t-ext not found in registry")
+	}
+	if fromReg.AllowedInbounds[0] != "vless-reality" {
+		t.Errorf("AllowedInbounds was mutated: %v", fromReg.AllowedInbounds)
+	}
+	if fromReg.Domains[0] != "tenant.example.com" {
+		t.Errorf("Domains was mutated: %v", fromReg.Domains)
+	}
+
+	// Verify SetLimits dynamic update
+	updated, err := r.SetLimits("t-ext", []string{"hysteria2"}, 50, "shared", 5, 100, []string{"new.example.com"})
+	if err != nil {
+		t.Fatalf("SetLimits failed: %v", err)
+	}
+	if updated.MaxUsers != 50 || updated.CoreType != "shared" || updated.MaxIPs != 5 || updated.SpeedLimitMbps != 100 {
+		t.Errorf("SetLimits returned unexpected values: %+v", updated)
+	}
+	if len(updated.AllowedInbounds) != 1 || updated.AllowedInbounds[0] != "hysteria2" {
+		t.Errorf("SetLimits AllowedInbounds = %v", updated.AllowedInbounds)
+	}
+	if len(updated.Domains) != 1 || updated.Domains[0] != "new.example.com" {
+		t.Errorf("SetLimits Domains = %v", updated.Domains)
+	}
+
+	// Verify get from registry reflects SetLimits
+	fromReg2, _ := r.Get("t-ext")
+	if fromReg2.MaxUsers != 50 || fromReg2.CoreType != "shared" || fromReg2.MaxIPs != 5 || fromReg2.SpeedLimitMbps != 100 {
+		t.Errorf("Registry state after SetLimits unexpected: %+v", fromReg2)
+	}
+}
+
+func TestTenantExtendedLimitsBoltPersistence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "extended_tenants.db")
+
+	store, err := OpenBoltStore(path)
+	if err != nil {
+		t.Fatalf("OpenBoltStore: %v", err)
+	}
+	r, err := NewRegistry(store)
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+
+	mustCreate(t, r, CreateParams{
+		ID:              "t-ext-bolt",
+		APIKey:          "key-bolt",
+		QuotaBytes:      2000,
+		AllowedInbounds: []string{"vless-reality", "trojan-ws"},
+		MaxUsers:        30,
+		CoreType:        "dedicated",
+		MaxIPs:          4,
+		SpeedLimitMbps:  50,
+		Domains:         []string{"bolt.example.com"},
+		InternalPort:    10444,
+	})
+
+	if err := store.Close(); err != nil {
+		t.Fatalf("store.Close: %v", err)
+	}
+
+	// Reopen store from bbolt file and verify all fields survived verbatim
+	store2, err := OpenBoltStore(path)
+	if err != nil {
+		t.Fatalf("reopen bolt store: %v", err)
+	}
+	defer store2.Close()
+
+	r2, err := NewRegistry(store2)
+	if err != nil {
+		t.Fatalf("NewRegistry reopen: %v", err)
+	}
+
+	tn, ok := r2.Get("t-ext-bolt")
+	if !ok {
+		t.Fatal("tenant t-ext-bolt not found after reopen")
+	}
+
+	if tn.MaxUsers != 30 {
+		t.Errorf("persisted MaxUsers = %d, want 30", tn.MaxUsers)
+	}
+	if tn.CoreType != "dedicated" {
+		t.Errorf("persisted CoreType = %q, want %q", tn.CoreType, "dedicated")
+	}
+	if tn.MaxIPs != 4 {
+		t.Errorf("persisted MaxIPs = %d, want 4", tn.MaxIPs)
+	}
+	if tn.SpeedLimitMbps != 50 {
+		t.Errorf("persisted SpeedLimitMbps = %d, want 50", tn.SpeedLimitMbps)
+	}
+	if tn.InternalPort != 10444 {
+		t.Errorf("persisted InternalPort = %d, want 10444", tn.InternalPort)
+	}
+	if len(tn.AllowedInbounds) != 2 || tn.AllowedInbounds[0] != "vless-reality" || tn.AllowedInbounds[1] != "trojan-ws" {
+		t.Errorf("persisted AllowedInbounds = %v, want [vless-reality trojan-ws]", tn.AllowedInbounds)
+	}
+	if len(tn.Domains) != 1 || tn.Domains[0] != "bolt.example.com" {
+		t.Errorf("persisted Domains = %v, want [bolt.example.com]", tn.Domains)
+	}
+}

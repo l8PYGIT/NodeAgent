@@ -34,19 +34,32 @@ const (
 
 // Tenant is a single customer's presence on this node.
 type Tenant struct {
-	ID               string `json:"id"`
-	APIKeyHash       string `json:"api_key_hash"`
-	Status           Status `json:"status"`
-	Reason           Reason `json:"reason"`
-	PeriodID         uint64 `json:"period_id"`
-	QuotaBytes       int64  `json:"quota_bytes"`
-	UsedBytes        int64  `json:"used_bytes"`
-	CreditLimitBytes int64  `json:"credit_limit_bytes"` // extra bytes allowed past quota before suspend
-	ExpireAt         int64  `json:"expire_at"`          // unix seconds; 0 = never expires
+	ID               string   `json:"id"`
+	APIKeyHash       string   `json:"api_key_hash"`
+	Status           Status   `json:"status"`
+	Reason           Reason   `json:"reason"`
+	PeriodID         uint64   `json:"period_id"`
+	QuotaBytes       int64    `json:"quota_bytes"`
+	UsedBytes        int64    `json:"used_bytes"`
+	CreditLimitBytes int64    `json:"credit_limit_bytes"` // extra bytes allowed past quota before suspend
+	ExpireAt         int64    `json:"expire_at"`          // unix seconds; 0 = never expires
+	AllowedInbounds  []string `json:"allowed_inbounds,omitempty"`
+	MaxUsers         int      `json:"max_users,omitempty"`
+	CoreType         string   `json:"core_type,omitempty"` // "shared" | "dedicated"
+	MaxIPs           int      `json:"max_ips,omitempty"`
+	SpeedLimitMbps   int      `json:"speed_limit_mbps,omitempty"`
+	Domains          []string `json:"domains,omitempty"`
+	InternalPort     int      `json:"internal_port,omitempty"`
 }
 
 func (t *Tenant) clone() *Tenant {
 	c := *t
+	if t.AllowedInbounds != nil {
+		c.AllowedInbounds = append([]string(nil), t.AllowedInbounds...)
+	}
+	if t.Domains != nil {
+		c.Domains = append([]string(nil), t.Domains...)
+	}
 	return &c
 }
 
@@ -100,6 +113,13 @@ type CreateParams struct {
 	CreditLimitBytes int64
 	ExpireAt         int64
 	PeriodID         uint64
+	AllowedInbounds  []string
+	MaxUsers         int
+	CoreType         string
+	MaxIPs           int
+	SpeedLimitMbps   int
+	Domains          []string
+	InternalPort     int
 }
 
 // CreateTenant registers a new tenant.
@@ -121,6 +141,21 @@ func (r *Registry) CreateTenant(p CreateParams) (*Tenant, error) {
 		period = 1
 	}
 
+	coreType := p.CoreType
+	if coreType == "" {
+		coreType = "shared"
+	}
+
+	var allowedInbounds []string
+	if p.AllowedInbounds != nil {
+		allowedInbounds = append([]string(nil), p.AllowedInbounds...)
+	}
+
+	var domains []string
+	if p.Domains != nil {
+		domains = append([]string(nil), p.Domains...)
+	}
+
 	t := &Tenant{
 		ID:               p.ID,
 		APIKeyHash:       hash,
@@ -130,6 +165,13 @@ func (r *Registry) CreateTenant(p CreateParams) (*Tenant, error) {
 		QuotaBytes:       p.QuotaBytes,
 		CreditLimitBytes: p.CreditLimitBytes,
 		ExpireAt:         p.ExpireAt,
+		AllowedInbounds:  allowedInbounds,
+		MaxUsers:        p.MaxUsers,
+		CoreType:        coreType,
+		MaxIPs:          p.MaxIPs,
+		SpeedLimitMbps:  p.SpeedLimitMbps,
+		Domains:         domains,
+		InternalPort:    p.InternalPort,
 	}
 
 	if err := r.store.SaveTenant(t); err != nil {
@@ -191,6 +233,37 @@ func (r *Registry) SetQuota(id string, quotaBytes, creditLimitBytes, expireAt in
 	t.QuotaBytes = quotaBytes
 	t.CreditLimitBytes = creditLimitBytes
 	t.ExpireAt = expireAt
+	if err := r.store.SaveTenant(t); err != nil {
+		return nil, err
+	}
+	return t.clone(), nil
+}
+
+// SetLimits updates allowed inbounds, max users, core type, max IPs, speed limit and domains.
+func (r *Registry) SetLimits(id string, allowedInbounds []string, maxUsers int, coreType string, maxIPs, speedLimitMbps int, domains []string) (*Tenant, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	t, ok := r.byID[id]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	if coreType == "" {
+		coreType = "shared"
+	}
+	var inboundsCopy []string
+	if allowedInbounds != nil {
+		inboundsCopy = append([]string(nil), allowedInbounds...)
+	}
+	var domainsCopy []string
+	if domains != nil {
+		domainsCopy = append([]string(nil), domains...)
+	}
+	t.AllowedInbounds = inboundsCopy
+	t.MaxUsers = maxUsers
+	t.CoreType = coreType
+	t.MaxIPs = maxIPs
+	t.SpeedLimitMbps = speedLimitMbps
+	t.Domains = domainsCopy
 	if err := r.store.SaveTenant(t); err != nil {
 		return nil, err
 	}

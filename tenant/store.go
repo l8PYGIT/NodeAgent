@@ -3,7 +3,7 @@ package tenant
 import "sync"
 
 // Store persists tenants so enforcement survives node restarts. The node keeps
-// its own copy of tenant quota/usage/status (the local source of truth for
+// its own copy of tenant quota/usage/status/limits (the local source of truth for
 // enforcement), independent of the main panel.
 type Store interface {
 	LoadTenants() ([]*Tenant, error)
