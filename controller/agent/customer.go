@@ -1,9 +1,11 @@
 package agent
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/pasarguard/node/common"
+	"github.com/pasarguard/node/shared"
 )
 
 // proxyInput is the subset of proxy credentials a customer may set for a user.
@@ -48,6 +50,10 @@ func (s *Server) syncUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.mgr.SetTenantUsers(r.Context(), tenantID, users); err != nil {
+		if errors.Is(err, shared.ErrUserLimitExceeded) {
+			writeError(w, http.StatusBadRequest, "user limit exceeded")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

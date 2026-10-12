@@ -78,12 +78,19 @@ func validTenantID(id string) bool {
 }
 
 type createTenantRequest struct {
-	ID               string `json:"id"`
-	APIKey           string `json:"api_key"`
-	QuotaBytes       int64  `json:"quota_bytes"`
-	CreditLimitBytes int64  `json:"credit_limit_bytes"`
-	ExpireAt         int64  `json:"expire_at"`
-	PeriodID         uint64 `json:"period_id"`
+	ID               string   `json:"id"`
+	APIKey           string   `json:"api_key"`
+	QuotaBytes       int64    `json:"quota_bytes"`
+	CreditLimitBytes int64    `json:"credit_limit_bytes"`
+	ExpireAt         int64    `json:"expire_at"`
+	PeriodID         uint64   `json:"period_id"`
+	AllowedInbounds  []string `json:"allowed_inbounds"`
+	MaxUsers         int      `json:"max_users"`
+	CoreType         string   `json:"core_type"`
+	MaxIPs           int      `json:"max_ips"`
+	SpeedLimitMbps   int      `json:"speed_limit_mbps"`
+	Domains          []string `json:"domains"`
+	InternalPort     int      `json:"internal_port"`
 }
 
 func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
@@ -109,6 +116,13 @@ func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
 		CreditLimitBytes: req.CreditLimitBytes,
 		ExpireAt:         req.ExpireAt,
 		PeriodID:         req.PeriodID,
+		AllowedInbounds:  req.AllowedInbounds,
+		MaxUsers:         req.MaxUsers,
+		CoreType:         req.CoreType,
+		MaxIPs:           req.MaxIPs,
+		SpeedLimitMbps:   req.SpeedLimitMbps,
+		Domains:          req.Domains,
+		InternalPort:     req.InternalPort,
 	})
 	if err != nil {
 		switch {

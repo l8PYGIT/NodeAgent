@@ -188,3 +188,67 @@ func TestAdminTenantLifecycle(t *testing.T) {
 		t.Errorf("deleted tenant access: got %d, want 401", rr.Code)
 	}
 }
+
+func TestAdminCreateTenantExtendedFields(t *testing.T) {
+	srv := newTestServer(t)
+	h := srv.Router()
+
+	rr := do(t, h, http.MethodPost, "/admin/tenants", "master-key", map[string]any{
+		"id":               "t-ext",
+		"api_key":          "key-ext",
+		"quota_bytes":      5000,
+		"allowed_inbounds": []string{"vless-in"},
+		"max_users":        5,
+		"core_type":        "shared",
+		"max_ips":          2,
+		"speed_limit_mbps": 100,
+		"domains":          []string{"sub.domain.com"},
+		"internal_port":    10080,
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create tenant: got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var vm tenantViewModel
+	if err := json.Unmarshal(rr.Body.Bytes(), &vm); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if vm.MaxUsers != 5 || len(vm.AllowedInbounds) != 1 || vm.AllowedInbounds[0] != "vless-in" ||
+		vm.CoreType != "shared" || vm.MaxIPs != 2 || vm.SpeedLimitMbps != 100 ||
+		len(vm.Domains) != 1 || vm.Domains[0] != "sub.domain.com" || vm.InternalPort != 10080 {
+		t.Fatalf("unexpected tenantViewModel: %+v", vm)
+	}
+}
+
+func TestCustomerSyncUsersMaxUsersExceeded(t *testing.T) {
+	srv := newTestServer(t)
+	h := srv.Router()
+
+	// Create tenant with max_users = 1
+	rr := do(t, h, http.MethodPost, "/admin/tenants", "master-key", map[string]any{
+		"id":          "t-limit",
+		"api_key":     "key-limit",
+		"quota_bytes": 10000,
+		"max_users":   1,
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create tenant: got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// Sync 2 users -> must fail with 400 and "user limit exceeded"
+	rr = do(t, h, http.MethodPut, "/tenant/users", "key-limit", map[string]any{
+		"users": []map[string]any{
+			{"email": "user1", "proxy": map[string]any{"vless_id": "id-1"}},
+			{"email": "user2", "proxy": map[string]any{"vless_id": "id-2"}},
+		},
+	})
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp map[string]string
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["error"] != "user limit exceeded" {
+		t.Fatalf("expected error 'user limit exceeded', got %q", resp["error"])
+	}
+}

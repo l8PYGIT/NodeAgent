@@ -16,6 +16,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -30,6 +31,9 @@ import (
 	"github.com/pasarguard/node/pkg/netutil"
 	"github.com/pasarguard/node/tenant"
 )
+
+// ErrUserLimitExceeded is returned when syncing users exceeds tenant's MaxUsers.
+var ErrUserLimitExceeded = errors.New("user limit exceeded")
 
 // statsTimeout bounds the traffic-stats RPC to the Xray API. The enforcement
 // loop runs with the agent's root context, which has no deadline, so without
@@ -86,11 +90,47 @@ func (m *Manager) effectiveInbounds() []string {
 	return m.autoInbounds
 }
 
+// effectiveInboundsForTenant returns the inbound tags for a specific tenant,
+// considering node effective inbounds and the tenant's AllowedInbounds filter.
+func (m *Manager) effectiveInboundsForTenant(tenantID string) []string {
+	eff := m.effectiveInbounds()
+	if m.reg == nil {
+		return eff
+	}
+	tn, ok := m.reg.Get(tenantID)
+	if !ok || len(tn.AllowedInbounds) == 0 || hasWildcard(tn.AllowedInbounds) {
+		return eff
+	}
+	allowedMap := make(map[string]bool, len(tn.AllowedInbounds))
+	for _, a := range tn.AllowedInbounds {
+		allowedMap[a] = true
+	}
+	var matched []string
+	for _, ib := range eff {
+		if allowedMap[ib] {
+			matched = append(matched, ib)
+		}
+	}
+	if len(matched) > 0 {
+		return matched
+	}
+	return eff
+}
+
+func hasWildcard(tags []string) bool {
+	for _, t := range tags {
+		if t == "*" {
+			return true
+		}
+	}
+	return false
+}
+
 // buildUser returns the namespaced user to apply to the core, pinning it to the
-// node's effective inbound tags so it lands on the real shared inbound(s).
+// node's effective inbound tags (or tenant's allowed inbounds) so it lands on the real shared inbound(s).
 func (m *Manager) buildUser(tenantID string, u *common.User) *common.User {
 	inbounds := u.GetInbounds()
-	if eff := m.effectiveInbounds(); len(eff) > 0 {
+	if eff := m.effectiveInboundsForTenant(tenantID); len(eff) > 0 {
 		inbounds = eff
 	}
 	return &common.User{
@@ -116,7 +156,8 @@ func (m *Manager) buildUser(tenantID string, u *common.User) *common.User {
 // the user is left untouched: withInbounds(u, nil) means "remove from every
 // inbound", which must never be an accident of an empty derivation.
 func (m *Manager) pinnedForCore(u *common.User) *common.User {
-	eff := m.effectiveInbounds()
+	tenantID := m.emailTo[u.GetEmail()]
+	eff := m.effectiveInboundsForTenant(tenantID)
 	if len(eff) == 0 || sameTags(u.GetInbounds(), eff) {
 		return u
 	}
@@ -359,6 +400,14 @@ func (m *Manager) XrayExecutablePath() string {
 	return m.cfg.XrayExecutablePath
 }
 
+// SharableInboundsForTenant returns shareable inbounds filtered to tenant's AllowedInbounds
+// (if non-empty and no "*").
+func (m *Manager) SharableInboundsForTenant(tenantID string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.sharableInboundsLocked(tenantID)
+}
+
 // SharableInbounds returns a {"inbounds":[...]} JSON document containing only the
 // inbound definitions a customer needs to replicate the node's connection in
 // their own panel. It is narrowed to the effective inbound tags (operator
@@ -368,6 +417,10 @@ func (m *Manager) XrayExecutablePath() string {
 func (m *Manager) SharableInbounds() (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.sharableInboundsLocked("")
+}
+
+func (m *Manager) sharableInboundsLocked(tenantID string) (string, error) {
 	if m.config == "" {
 		return `{"inbounds":[]}`, nil
 	}
@@ -377,10 +430,34 @@ func (m *Manager) SharableInbounds() (string, error) {
 	if err := json.Unmarshal([]byte(m.config), &doc); err != nil {
 		return "", fmt.Errorf("parse config: %w", err)
 	}
+
+	filterTags := m.effectiveInbounds()
+	isTenantFiltered := false
+	if tenantID != "" && m.reg != nil {
+		if tn, ok := m.reg.Get(tenantID); ok && len(tn.AllowedInbounds) > 0 && !hasWildcard(tn.AllowedInbounds) {
+			isTenantFiltered = true
+			if len(filterTags) > 0 {
+				allowedMap := make(map[string]bool, len(tn.AllowedInbounds))
+				for _, t := range tn.AllowedInbounds {
+					allowedMap[t] = true
+				}
+				var matched []string
+				for _, t := range filterTags {
+					if allowedMap[t] {
+						matched = append(matched, t)
+					}
+				}
+				filterTags = matched
+			} else {
+				filterTags = tn.AllowedInbounds
+			}
+		}
+	}
+
 	keep := doc.Inbounds
-	if eff := m.effectiveInbounds(); len(eff) > 0 {
-		allowed := make(map[string]bool, len(eff))
-		for _, t := range eff {
+	if len(filterTags) > 0 {
+		allowed := make(map[string]bool, len(filterTags))
+		for _, t := range filterTags {
 			allowed[t] = true
 		}
 		filtered := make([]json.RawMessage, 0, len(doc.Inbounds))
@@ -392,12 +469,13 @@ func (m *Manager) SharableInbounds() (string, error) {
 				filtered = append(filtered, ib)
 			}
 		}
-		// Only narrow when at least one effective tag actually matched; otherwise
-		// fall back to all inbounds so the customer still gets something usable.
-		if len(filtered) > 0 {
+		if isTenantFiltered || len(filtered) > 0 {
 			keep = filtered
 		}
+	} else if isTenantFiltered {
+		keep = nil
 	}
+
 	// Redact node secrets (e.g. the Reality private key) and surface the public
 	// key the customer needs to build client links.
 	redacted := make([]json.RawMessage, 0, len(keep))
@@ -478,6 +556,9 @@ func (m *Manager) SetTenantUsers(ctx context.Context, tenantID string, users []*
 	if !ok {
 		return tenant.ErrNotFound
 	}
+	if tn.MaxUsers > 0 && len(users) > tn.MaxUsers {
+		return ErrUserLimitExceeded
+	}
 	active := tn.Status == tenant.StatusActive
 	prefix := "t" + tenantID + "."
 
@@ -548,6 +629,18 @@ func (m *Manager) AddTenantUsers(ctx context.Context, tenantID string, users []*
 	tn, ok := m.reg.Get(tenantID)
 	if !ok {
 		return tenant.ErrNotFound
+	}
+	if tn.MaxUsers > 0 {
+		count := len(m.users[tenantID])
+		for _, u := range users {
+			ne := namespacedEmail(tenantID, u.GetEmail())
+			if _, exists := m.users[tenantID][ne]; !exists {
+				count++
+			}
+		}
+		if count > tn.MaxUsers {
+			return ErrUserLimitExceeded
+		}
 	}
 	active := tn.Status == tenant.StatusActive
 	prefix := "t" + tenantID + "."

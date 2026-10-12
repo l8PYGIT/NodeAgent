@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"crypto/tls"
+	"errors"
 	"io"
 	"log"
 	"net"
@@ -203,6 +204,9 @@ func (s *Server) Start(ctx context.Context, b *common.Backend) (*common.BaseInfo
 	ci := caller(ctx)
 	if ci.scope == scopeTenant {
 		if err := s.mgr.SetTenantUsers(ctx, ci.tenantID, b.GetUsers()); err != nil {
+			if errors.Is(err, shared.ErrUserLimitExceeded) {
+				return nil, status.Error(codes.ResourceExhausted, "user limit exceeded")
+			}
 			return nil, status.Errorf(codes.Internal, "apply users: %v", err)
 		}
 		return s.baseInfo(), nil
@@ -255,6 +259,9 @@ func (s *Server) SyncUsers(ctx context.Context, u *common.Users) (*common.Empty,
 	ci := caller(ctx)
 	if ci.scope == scopeTenant {
 		if err := s.mgr.SetTenantUsers(ctx, ci.tenantID, u.GetUsers()); err != nil {
+			if errors.Is(err, shared.ErrUserLimitExceeded) {
+				return nil, status.Error(codes.ResourceExhausted, "user limit exceeded")
+			}
 			return nil, status.Errorf(codes.Internal, "apply users: %v", err)
 		}
 	}
@@ -282,6 +289,9 @@ func (s *Server) SyncUser(stream grpc.ClientStreamingServer[common.User, common.
 			continue
 		}
 		if e := s.mgr.AddTenantUsers(stream.Context(), ci.tenantID, []*common.User{u}); e != nil {
+			if errors.Is(e, shared.ErrUserLimitExceeded) {
+				return status.Error(codes.ResourceExhausted, "user limit exceeded")
+			}
 			return status.Errorf(codes.Internal, "apply user: %v", e)
 		}
 	}
@@ -314,6 +324,9 @@ func (s *Server) SyncUsersChunked(stream grpc.ClientStreamingServer[common.Users
 				return status.Errorf(codes.InvalidArgument, "incomplete user chunks: %v", buildErr)
 			}
 			if e := s.mgr.SetTenantUsers(stream.Context(), ci.tenantID, users); e != nil {
+				if errors.Is(e, shared.ErrUserLimitExceeded) {
+					return status.Error(codes.ResourceExhausted, "user limit exceeded")
+				}
 				return status.Errorf(codes.Internal, "apply users: %v", e)
 			}
 			return stream.SendAndClose(&common.Empty{})

@@ -2,6 +2,7 @@ package shared
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -113,5 +114,138 @@ func TestSharedManagerWithRealXray(t *testing.T) {
 	}
 	if tn, _ := reg.Get("t1"); tn.Status != tenant.StatusActive || tn.UsedBytes != 0 {
 		t.Fatalf("after renewal expected active/zero usage, got status=%s used=%d", tn.Status, tn.UsedBytes)
+	}
+}
+
+func TestManagerMaxUsersLimit(t *testing.T) {
+	reg, err := tenant.NewRegistry(tenant.NewMemStore())
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	m := NewManager(&config.Config{}, reg)
+
+	// Create tenant with MaxUsers = 2
+	_, err = reg.CreateTenant(tenant.CreateParams{
+		ID:       "t-max",
+		APIKey:   "key-max",
+		MaxUsers: 2,
+	})
+	if err != nil {
+		t.Fatalf("CreateTenant: %v", err)
+	}
+
+	ctx := context.Background()
+	u1 := &common.User{
+		Email:   "u1",
+		Proxies: &common.Proxy{Vless: &common.Vless{Id: uuid.NewString()}},
+	}
+	u2 := &common.User{
+		Email:   "u2",
+		Proxies: &common.Proxy{Vless: &common.Vless{Id: uuid.NewString()}},
+	}
+	u3 := &common.User{
+		Email:   "u3",
+		Proxies: &common.Proxy{Vless: &common.Vless{Id: uuid.NewString()}},
+	}
+
+	// 2 users <= MaxUsers (2) -> should succeed
+	if err := m.SetTenantUsers(ctx, "t-max", []*common.User{u1, u2}); err != nil {
+		t.Fatalf("SetTenantUsers (2 users) failed: %v", err)
+	}
+	if got := m.TenantUserCount("t-max"); got != 2 {
+		t.Fatalf("expected 2 users, got %d", got)
+	}
+
+	// 3 users > MaxUsers (2) -> must reject with ErrUserLimitExceeded
+	err = m.SetTenantUsers(ctx, "t-max", []*common.User{u1, u2, u3})
+	if !errors.Is(err, ErrUserLimitExceeded) {
+		t.Fatalf("expected ErrUserLimitExceeded, got %v", err)
+	}
+	// Verify state wasn't modified by rejected call
+	if got := m.TenantUserCount("t-max"); got != 2 {
+		t.Fatalf("expected user count to stay 2 after rejected sync, got %d", got)
+	}
+}
+
+func TestManagerAllowedInboundsPinning(t *testing.T) {
+	reg, err := tenant.NewRegistry(tenant.NewMemStore())
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	m := NewManager(&config.Config{}, reg)
+	m.SetForceInbounds([]string{"vless-in", "vmess-in"})
+
+	// Tenant 1: pinned to vless-in only
+	_, err = reg.CreateTenant(tenant.CreateParams{
+		ID:              "t-pinned",
+		APIKey:          "key-pinned",
+		AllowedInbounds: []string{"vless-in"},
+	})
+	if err != nil {
+		t.Fatalf("CreateTenant: %v", err)
+	}
+
+	// Tenant 2: wildcard allows all node inbounds
+	_, err = reg.CreateTenant(tenant.CreateParams{
+		ID:              "t-wildcard",
+		APIKey:          "key-wildcard",
+		AllowedInbounds: []string{"*"},
+	})
+	if err != nil {
+		t.Fatalf("CreateTenant: %v", err)
+	}
+
+	// Tenant 3: allowed inbounds don't match node inbounds -> fallback to all node inbounds
+	_, err = reg.CreateTenant(tenant.CreateParams{
+		ID:              "t-nomatch",
+		APIKey:          "key-nomatch",
+		AllowedInbounds: []string{"trojan-in"},
+	})
+	if err != nil {
+		t.Fatalf("CreateTenant: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Sync user for t-pinned
+	u1 := &common.User{
+		Email:    "alice",
+		Proxies:  &common.Proxy{Vless: &common.Vless{Id: uuid.NewString()}},
+		Inbounds: []string{"vmess-in", "other"},
+	}
+	if err := m.SetTenantUsers(ctx, "t-pinned", []*common.User{u1}); err != nil {
+		t.Fatalf("SetTenantUsers (t-pinned) failed: %v", err)
+	}
+	user1 := m.users["t-pinned"]["tt-pinned.alice"]
+	if len(user1.GetInbounds()) != 1 || user1.GetInbounds()[0] != "vless-in" {
+		t.Fatalf("expected t-pinned user inbounds to be [vless-in], got %v", user1.GetInbounds())
+	}
+
+	// Sync user for t-wildcard
+	u2 := &common.User{
+		Email:    "bob",
+		Proxies:  &common.Proxy{Vless: &common.Vless{Id: uuid.NewString()}},
+		Inbounds: []string{"vless-in"},
+	}
+	if err := m.SetTenantUsers(ctx, "t-wildcard", []*common.User{u2}); err != nil {
+		t.Fatalf("SetTenantUsers (t-wildcard) failed: %v", err)
+	}
+	user2 := m.users["t-wildcard"]["tt-wildcard.bob"]
+	if len(user2.GetInbounds()) != 2 || user2.GetInbounds()[0] != "vless-in" || user2.GetInbounds()[1] != "vmess-in" {
+		t.Fatalf("expected t-wildcard user inbounds to be [vless-in vmess-in], got %v", user2.GetInbounds())
+	}
+
+	// Sync user for t-nomatch
+	u3 := &common.User{
+		Email:    "charlie",
+		Proxies:  &common.Proxy{Vless: &common.Vless{Id: uuid.NewString()}},
+		Inbounds: []string{"trojan-in"},
+	}
+	if err := m.SetTenantUsers(ctx, "t-nomatch", []*common.User{u3}); err != nil {
+		t.Fatalf("SetTenantUsers (t-nomatch) failed: %v", err)
+	}
+	user3 := m.users["t-nomatch"]["tt-nomatch.charlie"]
+	if len(user3.GetInbounds()) != 2 || user3.GetInbounds()[0] != "vless-in" || user3.GetInbounds()[1] != "vmess-in" {
+		t.Fatalf("expected t-nomatch user inbounds to fallback to [vless-in vmess-in], got %v", user3.GetInbounds())
 	}
 }

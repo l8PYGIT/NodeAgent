@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/pasarguard/node/common"
@@ -191,5 +193,41 @@ func TestGRPCStartAppliesConfig(t *testing.T) {
 	}
 	if !mgr.Started() {
 		t.Fatal("manager core should be running after gRPC Start")
+	}
+}
+
+func TestGRPCTenantMaxUsersEnforcement(t *testing.T) {
+	reg, _ := tenant.NewRegistry(tenant.NewMemStore())
+	if _, err := reg.CreateTenant(tenant.CreateParams{
+		ID:         "t-limit",
+		APIKey:     "cust-limit",
+		QuotaBytes: 1 << 30,
+		MaxUsers:   1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mgr := shared.NewManager(&config.Config{}, reg)
+	authn := tenant.NewAuthenticator("master", reg)
+	client := startBufServer(t, New(mgr, authn, "core-secret"))
+
+	ctx := authCtx("cust-limit")
+	twoUsers := []*common.User{
+		{Email: "u1", Proxies: &common.Proxy{Vless: &common.Vless{Id: "11111111-1111-1111-1111-111111111111"}}},
+		{Email: "u2", Proxies: &common.Proxy{Vless: &common.Vless{Id: "22222222-2222-2222-2222-222222222222"}}},
+	}
+
+	// 1. Start with 2 users when MaxUsers = 1 -> ResourceExhausted
+	_, err := client.Start(ctx, &common.Backend{
+		Type:  common.BackendType_XRAY,
+		Users: twoUsers,
+	})
+	if status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("Start: expected codes.ResourceExhausted, got %v (code %v)", err, status.Code(err))
+	}
+
+	// 2. SyncUsers with 2 users when MaxUsers = 1 -> ResourceExhausted
+	_, err = client.SyncUsers(ctx, &common.Users{Users: twoUsers})
+	if status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("SyncUsers: expected codes.ResourceExhausted, got %v (code %v)", err, status.Code(err))
 	}
 }
