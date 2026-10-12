@@ -231,3 +231,53 @@ func TestGRPCTenantMaxUsersEnforcement(t *testing.T) {
 		t.Fatalf("SyncUsers: expected codes.ResourceExhausted, got %v (code %v)", err, status.Code(err))
 	}
 }
+
+func TestGRPCDedicatedTenantStartAppliesDedicatedConfig(t *testing.T) {
+	reg, _ := tenant.NewRegistry(tenant.NewMemStore())
+	if _, err := reg.CreateTenant(tenant.CreateParams{
+		ID:         "t-dedicated",
+		APIKey:     "cust-ded-key",
+		QuotaBytes: 1 << 30,
+		CoreType:   "dedicated",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mgr := shared.NewManager(&config.Config{}, reg)
+	authn := tenant.NewAuthenticator("master", reg)
+	client := startBufServer(t, New(mgr, authn, "core-secret"))
+
+	ctx := authCtx("cust-ded-key")
+	dedConfig := `{"inbounds":[{"tag":"dedicated-vless"}]}`
+	users := []*common.User{
+		{Email: "bob", Proxies: &common.Proxy{Vless: &common.Vless{Id: "22222222-2222-2222-2222-222222222222"}}, Inbounds: []string{"dedicated-vless"}},
+	}
+
+	resp, err := client.Start(ctx, &common.Backend{
+		Type:   common.BackendType_XRAY,
+		Config: dedConfig,
+		Users:  users,
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("expected non-nil response")
+	}
+
+	// Verify that the dedicated instance in mgr received the config and is started
+	inst := mgr.InstanceManager().GetInstance("t-dedicated")
+	if inst == nil {
+		t.Fatal("expected dedicated instance to be created for t-dedicated")
+	}
+	if !inst.Started {
+		t.Fatal("expected dedicated instance to be started")
+	}
+	if inst.ConfigJSON != dedConfig {
+		t.Fatalf("expected config %s, got %s", dedConfig, inst.ConfigJSON)
+	}
+	// Verify user is also tracked in mgr
+	if got := mgr.TenantUserCount("t-dedicated"); got != 1 {
+		t.Fatalf("expected 1 user tracked for t-dedicated, got %d", got)
+	}
+}
+

@@ -52,6 +52,7 @@ type Server struct {
 	common.UnimplementedNodeServiceServer
 	mgr     *shared.Manager
 	authn   *tenant.Authenticator
+	reg     *tenant.Registry
 	coreKey string
 	// shutdown is closed when the server is stopping, so deliberately blocking
 	// stream handlers can return instead of holding GracefulStop forever.
@@ -59,7 +60,11 @@ type Server struct {
 }
 
 func New(mgr *shared.Manager, authn *tenant.Authenticator, coreKey string) *Server {
-	return &Server{mgr: mgr, authn: authn, coreKey: coreKey, shutdown: make(chan struct{})}
+	var reg *tenant.Registry
+	if mgr != nil {
+		reg = mgr.Registry()
+	}
+	return &Server{mgr: mgr, authn: authn, reg: reg, coreKey: coreKey, shutdown: make(chan struct{})}
 }
 
 type scopeKind int
@@ -199,10 +204,31 @@ func (w *wrappedStream) Context() context.Context { return w.ctx }
 // --- core management (honored) ---
 
 // Start: core scope applies the config; tenant scope provisions the tenant's
-// users (config ignored). Always returns success so the node shows connected.
+// users (config ignored for shared core; applied to dedicated instance for dedicated core).
+// Always returns success so the node shows connected.
 func (s *Server) Start(ctx context.Context, b *common.Backend) (*common.BaseInfoResponse, error) {
 	ci := caller(ctx)
 	if ci.scope == scopeTenant {
+		reg := s.reg
+		if reg == nil && s.mgr != nil {
+			reg = s.mgr.Registry()
+		}
+		if reg != nil {
+			if tn, ok := reg.Get(ci.tenantID); ok && tn.CoreType == "dedicated" {
+				if cfg := b.GetConfig(); cfg != "" {
+					if err := s.mgr.ApplyDedicatedConfig(ctx, ci.tenantID, cfg); err != nil {
+						return nil, status.Errorf(codes.Internal, "apply dedicated config: %v", err)
+					}
+				}
+				if err := s.mgr.SetTenantUsers(ctx, ci.tenantID, b.GetUsers()); err != nil {
+					if errors.Is(err, shared.ErrUserLimitExceeded) {
+						return nil, status.Error(codes.ResourceExhausted, "user limit exceeded")
+					}
+					return nil, status.Errorf(codes.Internal, "apply users: %v", err)
+				}
+				return s.baseInfo(), nil
+			}
+		}
 		if err := s.mgr.SetTenantUsers(ctx, ci.tenantID, b.GetUsers()); err != nil {
 			if errors.Is(err, shared.ErrUserLimitExceeded) {
 				return nil, status.Error(codes.ResourceExhausted, "user limit exceeded")

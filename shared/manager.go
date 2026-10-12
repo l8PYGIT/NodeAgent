@@ -52,6 +52,7 @@ type Manager struct {
 	creds         map[string]string                  // credential -> namespacedEmail (owner)
 	forceInbounds []string                           // operator override: if set, every user is applied to these inbound tags
 	autoInbounds  []string                           // proxy inbound tags derived from the running config (fallback when forceInbounds is empty)
+	im            *InstanceManager                   // manager for dedicated core instances
 	lastSeen      map[string]int64                   // namespacedEmail -> last absolute traffic bytes (for delta accounting)
 	config        string                             // the raw JSON of the running core config
 }
@@ -60,6 +61,7 @@ func NewManager(cfg *config.Config, reg *tenant.Registry) *Manager {
 	return &Manager{
 		cfg:      cfg,
 		reg:      reg,
+		im:       NewInstanceManager(11000),
 		users:    make(map[string]map[string]*common.User),
 		emailTo:  make(map[string]string),
 		creds:    make(map[string]string),
@@ -393,6 +395,61 @@ func (m *Manager) RestartCore(ctx context.Context) error {
 	return m.ApplyConfig(ctx, cfg)
 }
 
+// InstanceManager returns the dedicated core instance manager.
+func (m *Manager) InstanceManager() *InstanceManager {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.im
+}
+
+// Registry returns the tenant registry.
+func (m *Manager) Registry() *tenant.Registry {
+	return m.reg
+}
+
+// ApplyDedicatedConfig applies configuration to a tenant's dedicated instance,
+// allocating a dedicated port if not already assigned.
+func (m *Manager) ApplyDedicatedConfig(ctx context.Context, tenantID string, configJSON string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.im == nil {
+		m.im = NewInstanceManager(11000)
+	}
+	inst, err := m.im.GetOrCreateInstance(tenantID)
+	if err != nil {
+		return err
+	}
+	return inst.ApplyConfig(ctx, configJSON)
+}
+
+// SuspendDedicatedInstance stops a tenant's dedicated instance.
+func (m *Manager) SuspendDedicatedInstance(ctx context.Context, tenantID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.im == nil {
+		return nil
+	}
+	inst := m.im.GetInstance(tenantID)
+	if inst == nil {
+		return nil
+	}
+	return inst.Stop()
+}
+
+// ResumeDedicatedInstance starts a tenant's dedicated instance if it was configured.
+func (m *Manager) ResumeDedicatedInstance(ctx context.Context, tenantID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.im == nil {
+		return nil
+	}
+	inst := m.im.GetInstance(tenantID)
+	if inst == nil {
+		return nil
+	}
+	return inst.Start(ctx, inst.ConfigJSON)
+}
+
 // XrayExecutablePath returns the path of the Xray binary the core runs.
 func (m *Manager) XrayExecutablePath() string {
 	m.mu.Lock()
@@ -680,6 +737,11 @@ func (m *Manager) SuspendTenant(ctx context.Context, tenantID string, reason ten
 		return err
 	}
 	m.removeTenantFromCore(ctx, tenantID)
+	if m.im != nil {
+		if inst := m.im.GetInstance(tenantID); inst != nil {
+			_ = inst.Stop()
+		}
+	}
 	return nil
 }
 
@@ -690,6 +752,11 @@ func (m *Manager) ResumeTenant(ctx context.Context, tenantID string) error {
 	if _, err := m.reg.Resume(tenantID); err != nil {
 		return err
 	}
+	if m.im != nil {
+		if inst := m.im.GetInstance(tenantID); inst != nil && inst.ConfigJSON != "" {
+			_ = inst.Start(ctx, inst.ConfigJSON)
+		}
+	}
 	return m.addTenantToCore(ctx, tenantID)
 }
 
@@ -699,6 +766,9 @@ func (m *Manager) DeleteTenant(ctx context.Context, tenantID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.removeTenantFromCore(ctx, tenantID)
+	if m.im != nil {
+		m.im.ReleasePort(tenantID)
+	}
 	if err := m.reg.Delete(tenantID); err != nil {
 		return err
 	}
