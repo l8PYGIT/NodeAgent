@@ -6,6 +6,16 @@
 
 می‌توانی از **رابط وب پنل** (`http://PANEL_IP:8080/`) یا مستقیم از **API** (`/docs`) استفاده کنی. در ادامه هر دو نشان داده شده است.
 
+---
+
+## معماری و تفکیک دسترسی‌های خریدار
+
+![معماری هسته و مسیریابی SNI](../images/architecture.svg)
+
+![کنترل دسترسی خریدار](../images/buyer-permissions.svg)
+
+---
+
 ## گام ۱: افزودن نود به پنل
 چیزهایی که از خروجی نصب نود لازم داری: آدرس `https://NODE_IP:8090`، **master key**، و **گواهی** نود.
 
@@ -27,15 +37,29 @@ curl -X POST http://PANEL_IP:8080/api/v1/nodes \
 - `cert_pem` را برای **pin** بده. اگر خالی بگذاری، پنل بار اول گواهی را خودکار می‌گیرد (TOFU).
 - سلامت نود: `GET /api/v1/nodes/{id}/health`.
 
-## گام ۲: ساخت پلن
+## گام ۲: ساخت پلن با مجوزها و نوع هسته
+در این مرحله مشخص می‌کنی خریدار چه نوع دسترسی و امکاناتی خواهد داشت:
 ```bash
 curl -X POST http://PANEL_IP:8080/api/v1/plans \
   -H "Authorization: Bearer $PANEL_TOKEN" -H "Content-Type: application/json" \
-  -d '{"name":"50GB-30d","quota_bytes":53687091200,"duration_days":30,"max_users":50}'
+  -d '{
+    "name": "Dedicated-VIP-500GB",
+    "quota_bytes": 536870912000,
+    "duration_days": 30,
+    "max_users": 50,
+    "core_type": "dedicated",
+    "allowed_inbounds": ["vless-in", "reality-in"],
+    "max_ips": 2,
+    "speed_limit_mbps": 100
+  }'
 ```
-- `quota_bytes`: حجم کل (مثال: ۵۰ گیگ = 53687091200).
-- `duration_days`: مدت اعتبار.
-- `max_users`: حداکثر کاربر هم‌زمانِ مشتری.
+- **`core_type`:**
+  - `shared`: هسته اشتراکی استاندارد (کاربران چند خریدار روی یک هسته سبک Xray).
+  - `dedicated`: هسته اختصاصی؛ پروسس Xray مستقل برای خریدار روی پورت‌های پویا (`11000+`).
+- **`allowed_inbounds`:** آرایه‌ای از تگ‌های اینباندهای مجاز (مانند `["vless-in"]`). خریدار فقط این اینباندها را می‌بیند. خالی = همه اینباندها.
+- **`max_users`:** سقف مجاز کاربر برای این پلن (۰ = نامحدود). نود در صورت پر شدن ظرفیت کاربر، درخواست‌های جدید را با خطای ۴۰۰ یا `ResourceExhausted` رد می‌کند.
+- **`max_ips`:** حداکثر IP همزمان برای هر کاربر (۰ = نامحدود).
+- **`speed_limit_mbps`:** سقف سرعت به مگابیت (۰ = نامحدود).
 
 ## گام ۳: ساخت مشتری
 ```bash
@@ -45,21 +69,35 @@ curl -X POST http://PANEL_IP:8080/api/v1/customers \
 ```
 `external_ref` شناسه‌ی همان مشتری در ربات فروش است (اختیاری ولی مفید).
 
-## گام ۴: ساخت اشتراک (تحویل کلید مشتری)
+## گام ۴: ساخت اشتراک و اختصاص دامنه‌های اختصاصی
 ```bash
 curl -X POST http://PANEL_IP:8080/api/v1/customers/<CUSTOMER_ID>/subscriptions \
   -H "Authorization: Bearer $PANEL_TOKEN" -H "Content-Type: application/json" \
-  -d '{"plan_id":"<PLAN_ID>","node_id":"<NODE_ID>","credit_limit_bytes":0}'
+  -d '{
+    "plan_id": "<PLAN_ID>",
+    "node_id": "<NODE_ID>",
+    "domains": ["vpn.alishop.com"],
+    "allowed_inbounds": ["vless-in"],
+    "max_users": 50
+  }'
 ```
 پاسخ — **`api_key` فقط همین یک‌بار نمایش داده می‌شود**:
 ```json
 {
-  "subscription": { "id": "...", "status": "active", "quota_bytes": 53687091200, ... },
+  "subscription": { 
+    "id": "...", 
+    "status": "active", 
+    "core_type": "dedicated",
+    "domains": ["vpn.alishop.com"],
+    "quota_bytes": 536870912000, 
+    "max_users": 50
+  },
   "api_key": "<CUSTOMER_KEY>",
-  "node_address": "NODE_IP:62050"
+  "node_address": "NODE_IP:62050",
+  "sub_token": "20f575363c7f4e0b888f8e029ee77425"
 }
 ```
-- `credit_limit_bytes`: مقدار مجاز overage (مصرف اضافه‌ی قابل‌گزارش). `0` یعنی بدون اعتبار اضافه.
+- **`domains`:** در صورت اختصاص هسته اختصاصی، این دامنه‌ها در مسیریاب SNI روی پورت 443 ثبت می‌شوند تا ترافیک کاربر به اینستنس خریدار هدایت شود.
 
 ## گام ۵: تحویل به مشتری
 این سه چیز را به مشتری بده:
@@ -67,37 +105,25 @@ curl -X POST http://PANEL_IP:8080/api/v1/customers/<CUSTOMER_ID>/subscriptions \
 2. **گواهی نود** (همان PEM)
 3. **کلید مشتری** (`api_key` بالا)
 
-> 💡 **میان‌بر:** به‌جای جمع‌کردن دستی این موارد، در رابط وب روی اشتراک دکمه‌ی **«اتصال مشتری»** را بزن (یا API زیر را صدا بزن). همه‌چیز — آدرس gRPC، گواهی، و **inboundهای واقعی نود** — یک‌جا با دکمه‌ی کپی آماده‌ی تحویل است:
+> 💡 **میان‌بر:** در رابط وب روی اشتراک دکمه‌ی **«اتصال مشتری»** را بزن. همه‌چیز — نوع هسته، دامنه‌ها، آدرس gRPC، گواهی، و **inboundهای فیلترشده‌ی مجاز** — یک‌جا با دکمه‌ی کپی آماده‌ی تحویل است:
 > ```bash
 > curl http://PANEL_IP:8080/api/v1/subscriptions/<SUB_ID>/connection \
 >   -H "Authorization: Bearer $PANEL_TOKEN"
 > ```
-> پاسخ شامل `grpc_address`, `protocol`, `cert_pem` و `inbounds` است. کلید مشتری اینجا نیست (فقط هنگام ساخت اشتراک نمایش داده می‌شود).
 
-### 🔗 لینک عمومی اشتراک (بده دست مشتری)
-هر اشتراک یک **لینک عمومی** دارد: `https://PANEL/sub/<TOKEN>`. در رابط وب با دکمه‌ی «اتصال مشتری» یا هنگام ساخت اشتراک، این لینک را کپی کن و به مشتری بده. مشتری با باز کردنش (بدون نیاز به توکن ادمین) می‌بیند:
-- کانفیگِ inbound نود که باید در هسته‌ی پنلش بگذارد + آدرس gRPC + گواهی (با دکمه‌ی کپی)
-- وضعیت **حجم** (مصرف/باقی‌مانده) و **تاریخ انقضا**
+### 🔗 صفحه عمومی اشتراک مشتری (`/sub/<TOKEN>`)
+هر اشتراک یک **لینک عمومی** دارد: `https://PANEL/sub/<TOKEN>`.
+مشتری با باز کردن آن در مرورگر موارد زیر را به‌صورت زنده می‌بیند:
+- **گیج‌های دوگانه پیشرفت (Dual Meters):** نوار درصد مصرف حجم گیگابایتی + نوار درصد ظرفیت کاربران پرسنل.
+- نشان **هسته اختصاصی** یا **هسته اشتراکی**.
+- دامنه‌های اختصاصی خریدار.
+- کانفیگِ اینباندهای مجاز + آدرس gRPC + گواهی با دکمه‌های کپی مستقیم.
 
-توکن لینک در پاسخ ساخت اشتراک و `GET /subscriptions/{id}/connection` با کلید `sub_token` برمی‌گردد.
-
-مشتری با این‌ها نود را در پنل PasarGuard خودش اضافه می‌کند → [اتصال مشتری](05-Customer-Connect).
-
-## دیدن/تحویل کانفیگ هسته
-- **کانفیگ کامل زنده‌ی نود** (برای اپراتور): `GET /api/v1/nodes/{id}/config` — کانفیگ در حال اجرا را زنده از نود می‌گیرد (نه صرفاً آخرین push‌شده).
-- **inboundهای قابل‌اشتراک با مشتری** (بدون outbound/routing): `GET /api/v1/nodes/{id}/inbounds` — فقط بخش inbounds (و اگر force-inbounds تنظیم شده، همان تگ‌ها) را برمی‌گرداند تا امن به مشتری بدهی.
-
-## مدیریت اشتراک
-| کار | API |
-|-----|-----|
-| تعلیق | `POST /api/v1/subscriptions/{id}/suspend` |
-| ازسرگیری | `POST /api/v1/subscriptions/{id}/resume` |
-| افزایش حجم | `POST /api/v1/subscriptions/{id}/topup-quota` `{"add_bytes":N}` |
-| تمدید (ریست مصرف + تمدید انقضا) | `POST /api/v1/subscriptions/{id}/renew` |
-| حذف (deprovision مستأجر از نود) | `DELETE /api/v1/subscriptions/{id}` |
-| مصرف مشتری | `GET /api/v1/customers/{id}/usage` |
-| فعال/غیرفعال کل مشتری | `POST /api/v1/customers/{id}/enable` \| `/disable` |
-
-> **suspend ≠ delete:** تعلیق فقط کاربرها را از هسته برمی‌دارد ولی رکوردها می‌مانند؛ resume/renew برشان می‌گرداند. حذف، مستأجر و داده‌هایش را پاک می‌کند.
+## گام ۶: هشدارهای خودکار وب‌هوک (Webhook Alerts)
+پنل در مقاطع زیر به ربات فروش شما وب‌هوک ارسال می‌کند:
+- **`users.threshold`:** هنگام رسیدن ظرفیت کاربران به ۸۰٪ و ۹۰٪ سقف مجاز.
+- **`users.limit_reached`:** هنگام تکمیل ۱۰۰٪ ظرفیت اسلات‌های کاربران.
+- **`usage.threshold`:** هنگام مصرف ۸۰٪ و ۹۵٪ حجم.
+- **`usage.over_quota`:** اتمام حجم (۱۰۰٪).
 
 </div>

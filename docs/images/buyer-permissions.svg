@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 520" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b1120" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="cardGrad2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b" />
+      <stop offset="100%" stop-color="#172033" />
+    </linearGradient>
+    <linearGradient id="meterGreen" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <linearGradient id="meterAmber" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+    <linearGradient id="meterPurple" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#8b5cf6" />
+      <stop offset="100%" stop-color="#6366f1" />
+    </linearGradient>
+    <filter id="shadow2" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#000000" flood-opacity="0.35" />
+    </filter>
+  </defs>
+
+  <rect width="940" height="520" rx="16" fill="url(#bgGrad2)" />
+
+  <!-- Header -->
+  <text x="470" y="44" fill="#f8fafc" font-size="22" font-weight="700" text-anchor="middle" font-family="system-ui, -apple-system, Segoe UI, sans-serif">Buyer Permission Matrix &amp; Capacity Alerts</text>
+  <text x="470" y="70" fill="#94a3b8" font-size="13.5" text-anchor="middle" font-family="system-ui, -apple-system, Segoe UI, sans-serif">Granular Inbounds • User Hard Caps • QoS Limits • Proactive Webhook Alerts</text>
+
+  <!-- 4 Pillars Grid -->
+  <!-- Pillar 1: Inbound Permissions -->
+  <g filter="url(#shadow2)">
+    <rect x="40" y="105" width="200" height="380" rx="12" fill="url(#cardGrad2)" stroke="#3b82f6" stroke-width="1.2" />
+    <rect x="52" y="120" width="176" height="30" rx="6" fill="#1e3a8a" />
+    <text x="140" y="140" fill="#60a5fa" font-size="12" font-weight="700" text-anchor="middle" font-family="system-ui, sans-serif">1. INBOUND PERMISSIONS</text>
+
+    <text x="140" y="180" fill="#e2e8f0" font-size="13" font-weight="600" text-anchor="middle" font-family="system-ui, sans-serif">Allowed Inbounds</text>
+    <text x="140" y="198" fill="#94a3b8" font-size="11" text-anchor="middle" font-family="system-ui, sans-serif">Restrict proxy protocols</text>
+
+    <rect x="55" y="225" width="170" height="48" rx="6" fill="#0f172a" stroke="#22c55e" stroke-width="1" />
+    <text x="70" y="246" fill="#22c55e" font-size="12" font-weight="bold">✓ vless-in</text>
+    <text x="70" y="262" fill="#64748b" font-size="10.5">Permitted for customer</text>
+
+    <rect x="55" y="285" width="170" height="48" rx="6" fill="#0f172a" stroke="#22c55e" stroke-width="1" />
+    <text x="70" y="306" fill="#22c55e" font-size="12" font-weight="bold">✓ reality-in</text>
+    <text x="70" y="322" fill="#64748b" font-size="10.5">Permitted for customer</text>
+
+    <rect x="55" y="345" width="170" height="48" rx="6" fill="#0f172a" stroke="#ef4444" stroke-width="1" stroke-dasharray="3,3" />
+    <text x="70" y="366" fill="#ef4444" font-size="12" font-weight="bold">✗ trojan-in (Blocked)</text>
+    <text x="70" y="382" fill="#64748b" font-size="10.5">Filtered from tenant view</text>
+
+    <text x="140" y="440" fill="#94a3b8" font-size="11" text-anchor="middle" font-family="system-ui, sans-serif">Pinning ensures users only</text>
+    <text x="140" y="456" fill="#94a3b8" font-size="11" text-anchor="middle" font-family="system-ui, sans-serif">bind to authorized inbounds</text>
+  </g>
+
+  <!-- Pillar 2: User Slot Guard -->
+  <g filter="url(#shadow2)">
+    <rect x="260" y="105" width="200" height="380" rx="12" fill="url(#cardGrad2)" stroke="#10b981" stroke-width="1.2" />
+    <rect x="272" y="120" width="176" height="30" rx="6" fill="#064e3b" />
+    <text x="360" y="140" fill="#34d399" font-size="12" font-weight="700" text-anchor="middle" font-family="system-ui, sans-serif">2. USER SLOTS GUARD</text>
+
+    <text x="360" y="180" fill="#e2e8f0" font-size="13" font-weight="600" text-anchor="middle" font-family="system-ui, sans-serif">Max Users Capacity</text>
+    <text x="360" y="198" fill="#94a3b8" font-size="11" text-anchor="middle" font-family="system-ui, sans-serif">Hard boundary protection</text>
+
+    <!-- Visual meter -->
+    <rect x="275" y="225" width="170" height="85" rx="8" fill="#0f172a" stroke="#334155" />
+    <text x="290" y="248" fill="#cbd5e1" font-size="11">Current Usage: 48 / 50</text>
+    <rect x="290" y="258" width="140" height="10" rx="5" fill="#1e293b" />
+    <rect x="290" y="258" width="134" height="10" rx="5" fill="url(#meterAmber)" />
+    <text x="290" y="292" fill="#f59e0b" font-size="11" font-weight="bold">Capacity: 96% Full</text>
+
+    <rect x="275" y="325" width="170" height="68" rx="6" fill="#0f172a" stroke="#ef4444" stroke-width="1" />
+    <text x="360" y="347" fill="#fca5a5" font-size="11.5" font-weight="bold" text-anchor="middle">51st User Attempt</text>
+    <text x="360" y="367" fill="#ef4444" font-size="11" text-anchor="middle" font-family="monospace">HTTP 400 Bad Request</text>
+    <text x="360" y="382" fill="#ef4444" font-size="10.5" text-anchor="middle" font-family="monospace">gRPC: ResourceExhausted</text>
+
+    <text x="360" y="440" fill="#94a3b8" font-size="11" text-anchor="middle" font-family="system-ui, sans-serif">Prevents multi-tenant node</text>
+    <text x="360" y="456" fill="#94a3b8" font-size="11" text-anchor="middle" font-family="system-ui, sans-serif">resource hogging</text>
+  </g>
+
+  <!-- Pillar 3: Concurrency & QoS -->
+  <g filter="url(#shadow2)">
+    <rect x="480" y="105" width="200" height="380" rx="12" fill="url(#cardGrad2)" stroke="#8b5cf6" stroke-width="1.2" />
+    <rect x="492" y="120" width="176" height="30" rx="6" fill="#4c1d95" />
+    <text x="580" y="140" fill="#c084fc" font-size="12" font-weight="700" text-anchor="middle" font-family="system-ui, sans-serif">3. CONCURRENCY &amp; QOS</text>
+
+    <text x="580" y="180" fill="#e2e8f0" font-size="13" font-weight="600" text-anchor="middle" font-family="system-ui, sans-serif">Fair Use Enforcement</text>
+    <text x="580" y="198" fill="#94a3b8" font-size="11" text-anchor="middle" font-family="system-ui, sans-serif">Per-user connection control</text>
+
+    <rect x="495" y="225" width="170" height="70" rx="6" fill="#0f172a" stroke="#8b5cf6" stroke-width="1" />
+    <text x="510" y="248" fill="#e2e8f0" font-size="12" font-weight="600">Max Concurrent IPs</text>
+    <text x="510" y="268" fill="#a78bfa" font-size="14" font-weight="bold">Limit: 2 IPs / user</text>
+    <text x="510" y="284" fill="#64748b" font-size="10.5">Stops account sharing</text>
+
+    <rect x="495" y="310" width="170" height="70" rx="6" fill="#0f172a" stroke="#8b5cf6" stroke-width="1" />
+    <text x="510" y="333" fill="#e2e8f0" font-size="12" font-weight="600">Speed Limit</text>
+    <text x="510" y="353" fill="#a78bfa" font-size="14" font-weight="bold">100 Mbps Cap</text>
+    <text x="510" y="369" fill="#64748b" font-size="10.5">Guarantees line quality</text>
+
+    <text x="580" y="440" fill="#94a3b8" font-size="11" text-anchor="middle" font-family="system-ui, sans-serif">Enforced at tenant level</text>
+    <text x="580" y="456" fill="#94a3b8" font-size="11" text-anchor="middle" font-family="system-ui, sans-serif">without noisy neighbor issues</text>
+  </g>
+
+  <!-- Pillar 4: Telemetry & Webhooks -->
+  <g filter="url(#shadow2)">
+    <rect x="700" y="105" width="200" height="380" rx="12" fill="url(#cardGrad2)" stroke="#f59e0b" stroke-width="1.2" />
+    <rect x="712" y="120" width="176" height="30" rx="6" fill="#78350f" />
+    <text x="800" y="140" fill="#fcd34d" font-size="12" font-weight="700" text-anchor="middle" font-family="system-ui, sans-serif">4. TELEMETRY &amp; ALERTS</text>
+
+    <text x="800" y="180" fill="#e2e8f0" font-size="13" font-weight="600" text-anchor="middle" font-family="system-ui, sans-serif">Proactive Warnings</text>
+    <text x="800" y="198" fill="#94a3b8" font-size="11" text-anchor="middle" font-family="system-ui, sans-serif">Automated Bot Notifications</text>
+
+    <rect x="715" y="225" width="170" height="42" rx="6" fill="#0f172a" stroke="#3b82f6" />
+    <text x="725" y="244" fill="#60a5fa" font-size="11" font-weight="bold">users.threshold (80%)</text>
+    <text x="725" y="258" fill="#64748b" font-size="10">Alert bot: Capacity warning</text>
+
+    <rect x="715" y="275" width="170" height="42" rx="6" fill="#0f172a" stroke="#f59e0b" />
+    <text x="725" y="294" fill="#fbbf24" font-size="11" font-weight="bold">users.threshold (90%)</text>
+    <text x="725" y="308" fill="#64748b" font-size="10">Urgent upgrade recommendation</text>
+
+    <rect x="715" y="325" width="170" height="42" rx="6" fill="#0f172a" stroke="#ef4444" />
+    <text x="725" y="344" fill="#f87171" font-size="11" font-weight="bold">users.limit_reached (100%)</text>
+    <text x="725" y="358" fill="#64748b" font-size="10">Slots exhausted notification</text>
+
+    <rect x="715" y="375" width="170" height="42" rx="6" fill="#0f172a" stroke="#10b981" />
+    <text x="725" y="394" fill="#34d399" font-size="11" font-weight="bold">Dual Meters on /sub/{token}</text>
+    <text x="725" y="408" fill="#64748b" font-size="10">Volume GB + User Slot bars</text>
+
+    <text x="800" y="450" fill="#94a3b8" font-size="11" text-anchor="middle" font-family="system-ui, sans-serif">HMAC Signed Webhooks</text>
+  </g>
+
+  <!-- Footer -->
+  <text x="470" y="505" fill="#64748b" font-size="11.5" text-anchor="middle" font-family="system-ui, sans-serif">Enterprise-Grade Tenant Governance Built Directly into PasarGuard Node &amp; Panel</text>
+</svg>
