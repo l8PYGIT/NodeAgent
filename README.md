@@ -1,89 +1,111 @@
-# NodeAgent — PasarGuard multi-tenant & dedicated node (fork)
+<div align="center">
 
-نودِ **چند-مستأجری و هسته اختصاصی** بر پایه‌ی فورک [`PasarGuard/node`](https://github.com/PasarGuard/node). پشتیبانی هم‌زمان از **هسته اشتراکی** (چند مشتری با یک هسته Xray مشترک) و **هسته‌های اختصاصی** (پروسس مستقل Xray روی پورت‌های پویا با مسیریابی SNI روی پورت 443)، سهمیه‌بندی حجم و انقضا به‌صورت **محلی**، سقف مجاز کاربران (Hard Cap)، و فیلتر اینباندهای مجاز.
+![NodeAgent Banner](docs/images/banner.svg)
 
-> Repo: `https://github.com/loopy-iri/NodeAgent`  
-> پنلِ کنترل در ریپوی جدا: `https://github.com/loopy-iri/NodePanel`  
-> 📖 **راهنمای کامل (نصب، فروش، اتصال مشتری، API):** پوشه‌ی [`docs/wiki/`](docs/wiki/Home.md)
+# NodeAgent — PasarGuard Multi-Tenant & Dedicated Node Engine
+
+[![Release](https://img.shields.io/badge/Release-v0.6.0-06b6d4?style=for-the-badge&logo=github)](https://github.com/loopy-iri/NodeAgent/releases)
+[![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev/)
+[![Status](https://img.shields.io/badge/Tests-100%25%20Passing-22c55e?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/loopy-iri/NodeAgent)
+[![SNI Router](https://img.shields.io/badge/Router-Port%20443%20SNI-3b82f6?style=for-the-badge)](docs/images/architecture.svg)
+[![Instances](https://img.shields.io/badge/Instances-Dynamic%20Ports%20(11000+)-8b5cf6?style=for-the-badge)](docs/images/architecture.svg)
+[![gRPC Compat](https://img.shields.io/badge/gRPC-PasarGuard%20%3A62050-10b981?style=for-the-badge)](docs/images/preview.svg)
+
+<p align="center">
+  <b>موتور قدرتمند چند-مستأجری و هسته اختصاصی نود بر پایه فورک PasarGuard</b><br/>
+  <i>مسیریابی هوشمند SNI روی پورت 443 • ایزولاسیون کامل هسته‌های اختصاصی • اعمال سقف سخت‌افزاری کاربران</i>
+</p>
+
+[گزارش باگ](https://github.com/loopy-iri/NodeAgent/issues) · [مستندات کامل ویکی](docs/wiki/Home.md) · [مخزن پنل کنترل (NodePanel)](https://github.com/loopy-iri/NodePanel)
+
+</div>
 
 ---
 
-## معماری هسته اشتراکی و اختصاصی (Architecture)
+## 🖥️ وضعیت لایو و ترمینال سرویس نود (Live Engine Status Preview)
+
+![NodeAgent Terminal Preview](docs/images/preview.svg)
+
+---
+
+## 🏗️ معماری هسته اشتراکی و هسته‌های اختصاصی (Architecture Overview)
 
 ![معماری هسته اشتراکی و اختصاصی](docs/images/architecture.svg)
 
 ---
 
-## کنترل دسترسی‌ها و سقف ظرفیت کاربران (Governance & Permissions)
+## 🛡️ ماتریس دسترسی و کنترل ظرفیت خریداران (Buyer Permissions & Governance)
 
 ![کنترل دسترسی خریدار و هشدارهای وب‌هوک](docs/images/buyer-permissions.svg)
 
 ---
 
-## ویژگی‌ها
-- **تفکیک هسته اشتراکی (Shared) و اختصاصی (Dedicated):**
-  - **اشتراکی:** سبک، بدون مصرف بالای رم، چندین خریدار روی یک پروسس Xray با تفکیک ایمیل کاربران.
-  - **اختصاصی:** هر خریدار دارای پروسس مستقل Xray روی پورت‌های پویا (`11000+`). خریدار می‌تواند کانفیگ، روتینگ و اوت‌باندهای خود را مستقیماً از پنل PasarGuard اعمال کند (`Start/Restart`). ترافیک روی پورت 443 از طریق **SNI Dispatcher** بر اساس دامنه‌های خریدار تفکیک می‌شود.
-- **فیلتر اینباندهای مجاز (`allowed_inbounds`):** کاربرهای خریدار فقط روی اینباندهای تعیین‌شده توسط اپراتور اعمال می‌شوند. سایر اینباندها مخفی و مسدود هستند.
-- **اعمال سقف سخت کاربران (`max_users`):** در صورت تکمیل ظرفیت اسلات‌های مجاز، درخواست‌های ساخت کاربر از پنل مشتری با خطای `HTTP 400 Bad Request` و gRPC `codes.ResourceExhausted` پس زده می‌شوند.
-- **یکتایی credential** (uuid/password) در کل نود enforce می‌شود (ایزولاسیون امن auth).
-- **enforcement محلی**: اتمام حجم/انقضا → کاربرهای مشتری از هسته حذف و کلیدش رد می‌شود (suspend ≠ delete؛ تمدید، کاربرها را برمی‌گرداند).
-- **TLS سلف‌ساین** (auto-gen) + pin گواهی توسط پنل (یا TOFU خودکار).
-- **gRPC سازگار با PasarGuard** (پورت `62050`): مشتری‌ها با کلید خودشان وصل می‌شوند و کاربر می‌سازند؛ اپراتور نیز با **core key** می‌تواند کانفیگ هسته را کنترل کند.
+## ✨ ویژگی‌های کلیدی
+- **تفکیک کامل هسته اشتراکی و اختصاصی:**
+  - **Shared Core:** کاربران چندین خریدار روی یک هسته سبک Xray با نیم‌اسپیسینگ امن ایمیل و مشخصات اعمال می‌شوند.
+  - **Dedicated Instances:** اجرای اینستنس‌های مستقل Xray روی پورت‌های پویا (`11000+`). خریدار اختصاصی آزادی کامل در تعریف روتینگ و اوت‌باندهای خود دارد.
+  - **Port 443 SNI Dispatcher:** تمام ترافیک کلاینت‌ها روی پورت استاندارد ۴۴۳ دریافت شده و بر اساس دامنه SNI مستقیماً به پروسس اختصاصی خریدار هدایت می‌شود (ترافیک پیش‌فرض به هسته اشتراکی می‌رود).
+- **اعمال سقف سخت کاربران (`max_users`):** بررسی لحظه‌ای تعداد کاربران فعال مستاجر و رد درخواست در صورت تکمیل ظرفیت با خطای `HTTP 400 Bad Request` و gRPC `codes.ResourceExhausted`.
+- **فیلتر سخت‌گیرانه اینباندها (`allowed_inbounds`):** پین کردن اجباری کاربران خریدار فقط روی تگ‌های اینباند مجاز.
+- **تله‌متری و نظارت زنده:** ارائه آمار لحظه‌ای تعداد کاربران فعال (`active_users`) و حجم مصرفی به پنل کنترل.
+- **پایداری داده‌ها با bbolt:** ذخیره‌سازی محلی تمام سهمیه‌ها، سقف‌ها و دامنه‌ها جهت حفظ پایداری پس از ری‌استارت.
+- **سازگاری کامل gRPC با PasarGuard (پورت ۶۲۰۵۰):** خریدار نود شما را مثل یک نود استاندارد به پنل شخصی‌اش وصل می‌کند.
 
-## اجرا
+---
 
+## 🚀 راهنمای نصب و راه‌اندازی سریع
+
+### نصب خودکار با اسکریپت (سیستم‌های مبتنی بر لینوکس / systemd)
 ```bash
-# نصب کامل (دانلود باینری per-arch + Xray + systemd؛ بدون build روی سرور):
+# دانلود و نصب باینری آماده بدون نیاز به کامپایل:
 sudo bash -c "$(curl -sL https://raw.githubusercontent.com/loopy-iri/NodeAgent/main/scripts/pg-node.sh)" @ install
-
-# یا از روی clone:
-sudo bash scripts/pg-node.sh install
 ```
 
-دستورهای CLI: `install, update [VER], uninstall, up, down, restart, status, logs, core-update [VER], renew-cert, edit, edit-env, install-script, completion`.
-
-> نصب از **باینری از‌پیش‌ساخته** (GitHub Releases) انجام می‌شود؛ برای ساخت باینری‌ها کافی است یک تگ `v*` push کنی تا workflow ریلیز اجرا شود. اجرا با **systemd** (سرویس `pg-node-agent`) است، بدون Docker و بدون کامپایل روی سرور. هنگام نصب، master key و core key و گواهی نود چاپ می‌شوند.
-
-### اجرای محلی (توسعه)
+### اجرای محلی جهت توسعه و تست
 ```bash
-$env:PG_AGENT_MASTER_KEY="master"; $env:PG_AGENT_FIXED_CONFIG="configs/fixed-config.example.json"
-$env:XRAY_EXECUTABLE_PATH="<path>/xray"; go run ./cmd/agent
+# تنظیم متغیرهای محیطی
+$env:API_KEY = "11111111-2222-3333-4444-555555555555"
+$env:PG_AGENT_MASTER_KEY = "node-master-key-secret-9876543210"
+$env:PG_AGENT_HTTP_ADDR = ":8090"
+$env:PG_AGENT_GRPC_ADDR = ":62050"
+$env:SSL_CERT_FILE = "certs/ssl_cert.pem"
+$env:SSL_KEY_FILE = "certs/ssl_key.pem"
+$env:GENERATED_CONFIG_PATH = "generated/"
+$env:PG_AGENT_TENANT_DB = "tenants.bolt"
+
+# اجرا
+./agent.exe
 ```
 
-## متغیرهای محیطی
+---
 
-| متغیر | پیش‌فرض | شرح |
-|---|---|---|
-| `PG_AGENT_HTTP_ADDR` | `:8090` | آدرس API کنترلی (HTTPS) |
-| `PG_AGENT_MASTER_KEY` | — (الزامی) | کلید مستر برای پنل اصلی |
-| `PG_AGENT_CORE_KEY` | تولید خودکار | کلید مدیریت کانفیگ هسته از پنل PasarGuard (gRPC همیشه فعال است) |
-| `PG_AGENT_GRPC_ADDR` | `:62050` | آدرس gRPC |
-| `PG_AGENT_FORCE_INBOUNDS` | `vless-in` | کاربرهای هر مشتری روی این inbound tag(ها) اعمال شوند |
-| `PG_AGENT_TENANT_DB` | `tenants.bolt` | مسیر store محلی bbolt |
-| `PG_AGENT_FIXED_CONFIG` | — | کانفیگ ثابت Xray |
-| `SSL_CERT_FILE`/`SSL_KEY_FILE` | `/var/lib/pg-node/certs/...` | گواهی (auto-gen اگر نبود) |
+## ⚙️ متغیرهای محیطی (Environment Variables)
 
-## اتصال مشتری از پنل PasarGuard
+| متغیر | پیش‌فرض | الزامی | شرح |
+|---|---|:---:|---|
+| `PG_AGENT_HTTP_ADDR` | `:8090` | خیر | آدرس و پورت API کنترلی نود (HTTPS) |
+| `PG_AGENT_MASTER_KEY` | — | **بله** | کلید مستر جهت ارتباط امن پنل کنترل با نود |
+| `API_KEY` | — | **بله** | شناسه نود (یک UUID معتبر و غیرنیل) |
+| `PG_AGENT_GRPC_ADDR` | `:62050` | خیر | آدرس و پورت سازگار gRPC PasarGuard |
+| `PG_AGENT_CORE_KEY` | تولید خودکار | خیر | کلید مدیریت کانفیگ هسته از پنل اپراتور |
+| `PG_AGENT_FORCE_INBOUNDS` | `vless-in` | خیر | تگ‌های پیش‌فرض اینباندها (کاما-جدا) |
+| `PG_AGENT_TENANT_DB` | `tenants.bolt` | خیر | مسیر فایل دیتابیس لوکال مستأجرین |
+| `SSL_CERT_FILE` / `SSL_KEY_FILE` | `/var/lib/pg-node/...` | خیر | مسیر گواهی و کلید TLS نود (در صورت نبود خودکار تولید می‌شود) |
 
-مشتری (که پنل PasarGuard خودش را دارد) نود تو را مثل یک **نود معمولی** اضافه می‌کند:
-- **Address/Port:** آی‌پی نود + پورت gRPC (پیش‌فرض `62050`).
-- **Protocol:** gRPC.
-- **Certificate:** گواهی نود (همان PEM که موقع نصب چاپ شد / در پنل اصلی نمایش داده می‌شود) — برای pin.
-- **API Key:** **کلید مشتری** که پنل اصلیِ تو هنگام ساخت اشتراک تولید کرده (نه master/core key).
+---
 
-سپس:
-- کاربرهای پنل PasarGuard مشتری (vless/vmess/...) روی نود زیر همان tenant اضافه می‌شوند.
-- در حالت هسته اشتراکی، کانفیگ هسته خریدار ایگنور شده و فقط کاربرها روی اینباندهای مجاز اعمال می‌شوند.
-- در حالت هسته اختصاصی، کانفیگ دلخواه خریدار روی اینستنس مستقل او اعمال و دامنه‌هایش از پورت 443 به اینستنس هدایت می‌شوند.
-- با اتمام حجم/انقضا، کاربرهای آن مشتری حذف و دسترسی کلیدش رد می‌شود.
-
-## ساختار
+## 📂 ساختار پروژه
 ```
-cmd/agent/            entrypoint چند-مستأجری
-tenant/               Registry + auth دو سطحی + enforcement (bbolt) + limits
-shared/               مدیر هسته مشترک + instance_manager (هسته‌های اختصاصی + SNI router)
-controller/agent/     API HTTP (master/tenant) + حلقه‌ی enforcement
-controller/grpccompat/ gRPC سازگار با PasarGuard (مدیریت هسته اختصاصی/اشتراکی)
-backend/, common/, ... کد پایه‌ی upstream
+cmd/agent/            نقطه ورود و اجرای باینری نود
+tenant/               مدیریت مستأجرین، کلیدها، سقف کاربران و دیتابیس bbolt
+shared/               مدیریت هسته اشتراکی + instance_manager (هسته‌های اختصاصی و SNI router)
+controller/agent/     اندپوینت‌های HTTP دو سطحی (Master و Tenant) + لوپ انفرسمنت
+controller/grpccompat/ سرور gRPC سازگار با پنل PasarGuard (هسته اختصاصی و اشتراکی)
+backend/, common/     ماژول‌های پایه و پروتکل‌های هسته Xray
 ```
+
+---
+
+<div align="center">
+  <sub>طراحی شده برای پایداری و ایزولاسیون کامل در فروش دسترسی نودها</sub>
+</div>

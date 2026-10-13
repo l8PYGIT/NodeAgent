@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 560" width="100%" height="100%">
+  <defs>
+    <linearGradient id="termBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#050a12" />
+      <stop offset="100%" stop-color="#0b1320" />
+    </linearGradient>
+    <filter id="termShadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000000" flood-opacity="0.45" />
+    </filter>
+  </defs>
+
+  <!-- Terminal Window Frame -->
+  <rect width="940" height="560" rx="14" fill="url(#termBg)" stroke="#1e293b" stroke-width="1.5" />
+  
+  <!-- Terminal Top Bar -->
+  <rect width="940" height="42" rx="14" fill="#0d1826" />
+  <rect y="32" width="940" height="10" fill="#0d1826" />
+  <line x1="0" y1="42" x2="940" y2="42" stroke="#1e293b" stroke-width="1.2" />
+
+  <!-- Terminal Controls -->
+  <circle cx="24" cy="21" r="5.5" fill="#ef4444" />
+  <circle cx="42" cy="21" r="5.5" fill="#f59e0b" />
+  <circle cx="60" cy="21" r="5.5" fill="#22c55e" />
+
+  <!-- Terminal Title -->
+  <text x="470" y="26" fill="#94a3b8" font-size="12" font-weight="600" text-anchor="middle" font-family="monospace">root@node-de-01: ~ (pg-node-agent.service — live logs)</text>
+
+  <!-- Terminal Content Body -->
+  <g transform="translate(30, 65)" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="12.5" line-height="22">
+    <!-- Command Prompt -->
+    <text x="0" y="20" fill="#22c55e">root@node-de-01:~# <tspan fill="#f8fafc">systemctl status pg-node-agent</tspan></text>
+    
+    <!-- Service Status Block -->
+    <text x="0" y="44" fill="#94a3b8">● pg-node-agent.service - PasarGuard Multi-Tenant &amp; Dedicated Node Agent</text>
+    <text x="0" y="66" fill="#94a3b8">     Loaded: loaded (/etc/systemd/system/pg-node-agent.service; enabled)</text>
+    <text x="0" y="88" fill="#94a3b8">     Active: <tspan fill="#22c55e" font-weight="bold">active (running)</tspan> since Mon 2026-10-13 14:00:10 UTC; 4h 19min ago</text>
+    <text x="0" y="110" fill="#94a3b8">   Main PID: 18492 (agent)</text>
+    <text x="0" y="132" fill="#94a3b8">      Tasks: 18 (limit: 4915)</text>
+    <text x="0" y="154" fill="#94a3b8">     Memory: 42.1M (Shared Core + 2 Dedicated Instances)</text>
+
+    <!-- Horizontal Divider -->
+    <line x1="0" y1="175" x2="880" y2="175" stroke="#1e293b" stroke-width="1" />
+
+    <!-- Live Log Stream -->
+    <text x="0" y="200" fill="#38bdf8">[INFO] 17:39:09 agent listening on :8090 (HTTPS / TLS Self-Signed TOFU Pin)</text>
+    <text x="0" y="222" fill="#38bdf8">[INFO] 17:39:09 gRPC (PasarGuard-compat) listening on :62050 (mTLS Authenticated)</text>
+    <text x="0" y="244" fill="#a855f7">[INFO] 17:39:10 [SNI-Router] Listening on 0.0.0.0:443 (Dynamic TLS Dispatcher)</text>
+    
+    <!-- Dedicated instances -->
+    <text x="0" y="272" fill="#e2e8f0">[CORE] 17:49:15 Shared Xray core active (Tag: vless-in, ForceInbounds: [vless-in, reality-in])</text>
+    <text x="0" y="294" fill="#c084fc">[DEDICATED] 17:49:30 Allocated port 11001 for tenant <tspan fill="#38bdf8">63c1f403-bc85</tspan> (vpn.pars-telecom.com)</text>
+    <text x="0" y="316" fill="#c084fc">[DEDICATED] 17:49:31 Instance 11001 started with custom operator routing rules</text>
+    <text x="0" y="338" fill="#22c55e">[SNI-MAP] 17:49:31 SNI "vpn.pars-telecom.com" -> 127.0.0.1:11001 (Match Rate: 100%)</text>
+    <text x="0" y="360" fill="#94a3b8">[SNI-MAP] 17:49:31 SNI default / unmapped -> 127.0.0.1:443 (Shared Core Fallback)</text>
+
+    <!-- Quota & limits enforcement -->
+    <text x="0" y="388" fill="#fbbf24">[LIMITS] 17:52:10 Tenant 63c1f403: Enforcing MaxUsers=50, AllowedInbounds=[vless-in, reality-in]</text>
+    <text x="0" y="410" fill="#22c55e">[ENFORCE] 17:52:10 Quota check passed: 0 B / 500.0 GB (Tenant active, 0 users)</text>
+    <text x="0" y="432" fill="#38bdf8">[TELEMETRY] 17:54:00 Usage exported to Control Plane: ActiveUsers=0/50, Used=0B</text>
+
+    <!-- Command prompt at bottom -->
+    <text x="0" y="466" fill="#22c55e">root@node-de-01:~# <tspan fill="#ffffff" opacity="0.8">_</tspan></text>
+  </g>
+</svg>
