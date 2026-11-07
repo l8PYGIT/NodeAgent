@@ -1,4 +1,4 @@
-**🇬🇧 English** · [🇮🇷 فارسی](02-Install-Panel)
+﻿**🇬🇧 English** · [🇮🇷 فارسی](02-Install-Panel)
 
 # 1) Install the panel (operator)
 
@@ -6,7 +6,7 @@ Install the panel on a Linux server (with systemd). A prebuilt binary is downloa
 
 ## One-line install
 ```bash
-sudo bash -c "$(curl -sL https://raw.githubusercontent.com/loopy-iri/NodePanel/main/scripts/pg-panel.sh)" @ install
+sudo bash -c "$(curl -sL https://raw.githubusercontent.com/l8PYGIT/NodePanel/main/scripts/pg-panel.sh)" @ install
 ```
 
 At the end it prints — **save these**:

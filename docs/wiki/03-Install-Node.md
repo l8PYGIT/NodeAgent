@@ -1,4 +1,4 @@
-<div dir="rtl">
+﻿<div dir="rtl">
 
 [🇬🇧 English](03-Install-Node-EN) · **🇮🇷 فارسی**
 
@@ -8,12 +8,12 @@
 
 ## نصب یک‌خطی
 ```bash
-sudo bash -c "$(curl -sL https://raw.githubusercontent.com/loopy-iri/NodeAgent/main/scripts/pg-node.sh)" @ install
+sudo bash -c "$(curl -sL https://raw.githubusercontent.com/l8PYGIT/NodeAgent/main/scripts/pg-node.sh)" @ install
 ```
 
 اگر می‌خواهی هسته را هم از یک پنل PasarGuard مدیریت کنی (مثلاً برای استفاده‌ی شخصی)، با core key نصب کن:
 ```bash
-sudo bash -c "$(curl -sL https://raw.githubusercontent.com/loopy-iri/NodeAgent/main/scripts/pg-node.sh)" @ install --core-key "$(openssl rand -hex 32)"
+sudo bash -c "$(curl -sL https://raw.githubusercontent.com/l8PYGIT/NodeAgent/main/scripts/pg-node.sh)" @ install --core-key "$(openssl rand -hex 32)"
 ```
 > از نسخه‌ی فعلی، اگر `--core-key` ندهی هم یک core key **خودکار ساخته** می‌شود و در خروجی نصب چاپ می‌شود؛ پس مدیریت هسته از پنل PasarGuard همیشه آماده است.
 

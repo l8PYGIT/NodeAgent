@@ -1,12 +1,12 @@
-<div align="center">
+﻿<div align="center">
 
 ![NodeAgent Banner](docs/images/banner.svg)
 
 # NodeAgent — PasarGuard Multi-Tenant & Dedicated Node Engine
 
-[![Release](https://img.shields.io/badge/Release-v0.6.0-06b6d4?style=for-the-badge&logo=github)](https://github.com/loopy-iri/NodeAgent/releases)
+[![Release](https://img.shields.io/badge/Release-v0.5.2-06b6d4?style=for-the-badge&logo=github)](https://github.com/l8PYGIT/NodeAgent/releases)
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev/)
-[![Status](https://img.shields.io/badge/Tests-100%25%20Passing-22c55e?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/loopy-iri/NodeAgent)
+[![Status](https://img.shields.io/badge/Tests-100%25%20Passing-22c55e?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/l8PYGIT/NodeAgent)
 [![SNI Router](https://img.shields.io/badge/Router-Port%20443%20SNI-3b82f6?style=for-the-badge)](docs/images/architecture.svg)
 [![Instances](https://img.shields.io/badge/Instances-Dynamic%20Ports%20(11000+)-8b5cf6?style=for-the-badge)](docs/images/architecture.svg)
 [![gRPC Compat](https://img.shields.io/badge/gRPC-PasarGuard%20%3A62050-10b981?style=for-the-badge)](docs/images/preview.svg)
@@ -16,7 +16,7 @@
   <i>مسیریابی هوشمند SNI روی پورت 443 • ایزولاسیون کامل هسته‌های اختصاصی • اعمال سقف سخت‌افزاری کاربران</i>
 </p>
 
-[گزارش باگ](https://github.com/loopy-iri/NodeAgent/issues) · [مستندات کامل ویکی](docs/wiki/Home.md) · [مخزن پنل کنترل (NodePanel)](https://github.com/loopy-iri/NodePanel)
+[گزارش باگ](https://github.com/l8PYGIT/NodeAgent/issues) · [مستندات کامل ویکی](docs/wiki/Home.md) · [مخزن پنل کنترل (NodePanel)](https://github.com/l8PYGIT/NodePanel)
 
 </div>
 
@@ -58,7 +58,7 @@
 ### نصب خودکار با اسکریپت (سیستم‌های مبتنی بر لینوکس / systemd)
 ```bash
 # دانلود و نصب باینری آماده بدون نیاز به کامپایل:
-sudo bash -c "$(curl -sL https://raw.githubusercontent.com/loopy-iri/NodeAgent/main/scripts/pg-node.sh)" @ install
+sudo bash -c "$(curl -sL https://raw.githubusercontent.com/l8PYGIT/NodeAgent/main/scripts/pg-node.sh)" @ install
 ```
 
 ### اجرای محلی جهت توسعه و تست

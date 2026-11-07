@@ -1,4 +1,4 @@
-<div dir="rtl">
+﻿<div dir="rtl">
 
 [🇬🇧 English](02-Install-Panel-EN) · **🇮🇷 فارسی**
 
@@ -8,7 +8,7 @@
 
 ## نصب یک‌خطی
 ```bash
-sudo bash -c "$(curl -sL https://raw.githubusercontent.com/loopy-iri/NodePanel/main/scripts/pg-panel.sh)" @ install
+sudo bash -c "$(curl -sL https://raw.githubusercontent.com/l8PYGIT/NodePanel/main/scripts/pg-panel.sh)" @ install
 ```
 
 در پایان این‌ها چاپ می‌شود — **یادداشت کن**:

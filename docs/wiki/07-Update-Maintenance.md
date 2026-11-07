@@ -1,4 +1,4 @@
-<div dir="rtl">
+﻿<div dir="rtl">
 
 [🇬🇧 English](07-Update-Maintenance-EN) · **🇮🇷 فارسی**
 
@@ -27,8 +27,8 @@ sudo pg-node-agent update v0.2.2
 
 > اگر نسخه‌ی نصب‌شده‌ات قدیمی‌تر از v0.2.1 است (یعنی هنوز self-update ندارد)، **یک‌بار** اسکریپت را با اجرای دوباره‌ی `install` تازه کن (کلیدها/دیتا حفظ می‌شوند):
 > ```bash
-> sudo bash -c "$(curl -sL https://raw.githubusercontent.com/loopy-iri/NodeAgent/main/scripts/pg-node.sh)" @ install
-> sudo bash -c "$(curl -sL https://raw.githubusercontent.com/loopy-iri/NodePanel/main/scripts/pg-panel.sh)" @ install
+> sudo bash -c "$(curl -sL https://raw.githubusercontent.com/l8PYGIT/NodeAgent/main/scripts/pg-node.sh)" @ install
+> sudo bash -c "$(curl -sL https://raw.githubusercontent.com/l8PYGIT/NodePanel/main/scripts/pg-panel.sh)" @ install
 > ```
 
 ## آپدیت هسته‌ی Xray

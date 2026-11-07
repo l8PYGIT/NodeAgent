@@ -1,4 +1,4 @@
-**🇬🇧 English** · [🇮🇷 فارسی](07-Update-Maintenance)
+﻿**🇬🇧 English** · [🇮🇷 فارسی](07-Update-Maintenance)
 
 # Update & maintenance (operator)
 
@@ -25,8 +25,8 @@ Since node v0.5.0 and panel v0.6.0, from **Panel → Nodes → Details** you can
 
 > If your installed version is older than v0.2.1 (no self-update yet), refresh the script **once** by re-running `install` (keys/data are preserved):
 > ```bash
-> sudo bash -c "$(curl -sL https://raw.githubusercontent.com/loopy-iri/NodeAgent/main/scripts/pg-node.sh)" @ install
-> sudo bash -c "$(curl -sL https://raw.githubusercontent.com/loopy-iri/NodePanel/main/scripts/pg-panel.sh)" @ install
+> sudo bash -c "$(curl -sL https://raw.githubusercontent.com/l8PYGIT/NodeAgent/main/scripts/pg-node.sh)" @ install
+> sudo bash -c "$(curl -sL https://raw.githubusercontent.com/l8PYGIT/NodePanel/main/scripts/pg-panel.sh)" @ install
 > ```
 
 ## Update Xray-core

@@ -1,9 +1,9 @@
-# Contributing to NodeAgent
+﻿# Contributing to NodeAgent
 
 NodeAgent is a **multi-tenant** node for selling node access, based on a fork of
 [`PasarGuard/node`](https://github.com/PasarGuard/node). Thanks for helping out!
 
-> Repo: https://github.com/loopy-iri/NodeAgent · Control panel: https://github.com/loopy-iri/NodePanel
+> Repo: https://github.com/l8PYGIT/NodeAgent · Control panel: https://github.com/l8PYGIT/NodePanel
 > Full guide: the [`docs/wiki/`](docs/wiki/Home.md) folder (also published as the repo Wiki).
 
 ## Reporting issues

@@ -1,4 +1,4 @@
-<div dir="rtl">
+﻿<div dir="rtl">
 
 [🇬🇧 English](Home-EN) · **🇮🇷 فارسی**
 
@@ -9,8 +9,8 @@
 ## این سیستم چیست؟
 یک سامانه‌ی **فروش نود** بر پایه‌ی فورک [`PasarGuard/node`](https://github.com/PasarGuard/node):
 
-- **NodeAgent** ([repo](https://github.com/loopy-iri/NodeAgent)): نودِ **چند-مستأجری**. یک Xray مشترک، چند مشتری (tenant) را با کاربرهایشان سرویس می‌دهد؛ سهمیه‌ی حجم/انقضا را محلی enforce می‌کند.
-- **NodePanel** ([repo](https://github.com/loopy-iri/NodePanel)): پنل کنترل مرکزی که چند نود، مشتری، پلن و اشتراک را مدیریت می‌کند و مصرف را برای ربات فروش expose می‌کند.
+- **NodeAgent** ([repo](https://github.com/l8PYGIT/NodeAgent)): نودِ **چند-مستأجری**. یک Xray مشترک، چند مشتری (tenant) را با کاربرهایشان سرویس می‌دهد؛ سهمیه‌ی حجم/انقضا را محلی enforce می‌کند.
+- **NodePanel** ([repo](https://github.com/l8PYGIT/NodePanel)): پنل کنترل مرکزی که چند نود، مشتری، پلن و اشتراک را مدیریت می‌کند و مصرف را برای ربات فروش expose می‌کند.
 
 ## معماری در یک نگاه
 ```

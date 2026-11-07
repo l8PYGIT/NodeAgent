@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 #
 # pg-node.sh — installer/manager for the PasarGuard multi-tenant node agent (fork).
 #
@@ -6,12 +6,12 @@
 # runs it as a systemd service — no Docker, no on-server compilation.
 #
 # One-line install:
-#   sudo bash -c "$(curl -sL https://raw.githubusercontent.com/loopy-iri/NodeAgent/main/scripts/pg-node.sh)" @ install
+#   sudo bash -c "$(curl -sL https://raw.githubusercontent.com/l8PYGIT/NodeAgent/main/scripts/pg-node.sh)" @ install
 #
 set -euo pipefail
 
 # ---------- globals ----------
-GH_REPO="${GH_REPO:-loopy-iri/NodeAgent}"
+GH_REPO="${GH_REPO:-l8PYGIT/NodeAgent}"
 RAW_SCRIPT_URL="${RAW_SCRIPT_URL:-https://raw.githubusercontent.com/${GH_REPO}/main/scripts/pg-node.sh}"
 BIN_NAME="pg-node-agent"
 AUTO_CONFIRM="${AUTO_CONFIRM:-false}"

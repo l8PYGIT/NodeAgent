@@ -1,4 +1,4 @@
-package agent
+﻿package agent
 
 import (
 	"archive/tar"
@@ -22,7 +22,7 @@ import (
 )
 
 // nodeRepo is the GitHub repo used for node self-updates.
-const nodeRepo = "loopy-iri/NodeAgent"
+const nodeRepo = "l8PYGIT/NodeAgent"
 
 var versionRe = regexp.MustCompile(`^v?[0-9][0-9A-Za-z.\-]{0,30}$`)
 

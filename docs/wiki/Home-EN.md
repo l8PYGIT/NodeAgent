@@ -1,4 +1,4 @@
-**🇬🇧 English** · [🇮🇷 فارسی](Home)
+﻿**🇬🇧 English** · [🇮🇷 فارسی](Home)
 
 # Node-selling system guide (NodeAgent + NodePanel)
 
@@ -7,8 +7,8 @@ This wiki explains how the system works, what each role does, and the step-by-st
 ## What is this?
 A **node-reselling** system based on a fork of [`PasarGuard/node`](https://github.com/PasarGuard/node):
 
-- **NodeAgent** ([repo](https://github.com/loopy-iri/NodeAgent)): a **multi-tenant** node. One shared Xray serves many customers (tenants) with their own users; quota/expiry are enforced locally.
-- **NodePanel** ([repo](https://github.com/loopy-iri/NodePanel)): the central control panel that manages many nodes, customers, plans and subscriptions and exposes usage to a sales bot.
+- **NodeAgent** ([repo](https://github.com/l8PYGIT/NodeAgent)): a **multi-tenant** node. One shared Xray serves many customers (tenants) with their own users; quota/expiry are enforced locally.
+- **NodePanel** ([repo](https://github.com/l8PYGIT/NodePanel)): the central control panel that manages many nodes, customers, plans and subscriptions and exposes usage to a sales bot.
 
 ## Architecture at a glance
 ```
