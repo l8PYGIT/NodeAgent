@@ -9,9 +9,13 @@
 //   - IGNORES the users the panel sends (SyncUser/SyncUsers are accepted but are
 //     no-ops) so the panel cannot clobber tenant users;
 //   - makes Stop a no-op so the panel cannot take the sold node down;
-//   - returns empty (not errors) for stats/logs so the panel UI stays happy.
+//   - answers a customer's user-stat queries with that tenant's counters and
+//     reproduces the reset=true delta contract a PasarGuard panel accumulates
+//     (see deltaStats). Node-wide inbound/outbound stats stay empty because the
+//     shared core cannot attribute them to one tenant, and so does everything
+//     for the core key.
 //
-// It is gated by a dedicated core key and only started when that key is set.
+// It is gated by a dedicated core key or a tenant key and is always served.
 package grpccompat
 
 import (
@@ -22,6 +26,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -57,6 +62,24 @@ type Server struct {
 	// shutdown is closed when the server is stopping, so deliberately blocking
 	// stream handlers can return instead of holding GracefulStop forever.
 	shutdown chan struct{}
+
+	// statsMu guards statsSeen, the per-tenant baseline of cumulative per-user
+	// counters last reported to a reset=true caller.
+	statsMu   sync.Mutex
+	statsSeen map[string]*tenantStats
+}
+
+// tenantStats is one tenant's reset-reporting state.
+//
+// seeded is false until the first reset=true call has been answered: that call
+// records every visible counter as a baseline and reports zero, so a panel
+// connecting to a tenant that already carried traffic does not import the
+// counter's whole lifetime as a single delta. After seeding, a counter that was
+// not part of the seed belongs to a user added later, so its full value is
+// genuinely new traffic.
+type tenantStats struct {
+	seeded bool
+	seen   map[string]int64
 }
 
 func New(mgr *shared.Manager, authn *tenant.Authenticator, coreKey string) *Server {
@@ -365,16 +388,127 @@ func (s *Server) SyncUsersChunked(stream grpc.ClientStreamingServer[common.Users
 	}
 }
 
-// --- stats/logs (empty, not errors, to keep the panel UI happy) ---
+// --- stats/logs ---
 
-// GetStats returns the tenant's per-user stats (de-namespaced) for a customer;
-// nothing for the core scope (to avoid leaking other tenants' data).
-func (s *Server) GetStats(ctx context.Context, _ *common.StatRequest) (*common.StatResponse, error) {
-	ci := caller(ctx)
-	if ci.scope == scopeTenant {
-		return s.mgr.GetTenantUserStats(ctx, ci.tenantID)
+// isUserStatType reports whether a stat query is about per-user traffic, the
+// only kind a tenant can be answered for. Inbound/outbound counters belong to
+// the shared core as a whole: answering them for one tenant would attribute
+// every other tenant's traffic to it.
+func isUserStatType(t common.StatType) bool {
+	switch t {
+	case common.StatType_UsersStat, common.StatType_UserStat:
+		return true
+	default:
+		return false
 	}
-	return &common.StatResponse{}, nil
+}
+
+// GetStats returns the tenant's per-user stats (de-namespaced) for a customer.
+//
+// A PasarGuard panel records usage by calling GetStats(UsersStat, reset=true)
+// and ADDING every returned value to the user's used_traffic. Upstream's node
+// answers with counters reset, i.e. "bytes since the previous call". Returning
+// the cumulative counters instead made every poll add the user's entire lifetime
+// again — the "terabyte in a minute" blow-up that also gets users limited.
+// deltaStats reproduces the delta contract without resetting the shared core's
+// counters, which our enforcement loop reads as absolute values.
+//
+// The core scope gets an empty answer (as before): a panel driving the core must
+// not see tenant usage.
+func (s *Server) GetStats(ctx context.Context, req *common.StatRequest) (*common.StatResponse, error) {
+	ci := caller(ctx)
+	if ci.scope != scopeTenant || !isUserStatType(req.GetType()) || s.mgr == nil {
+		return &common.StatResponse{}, nil
+	}
+
+	resp, err := s.mgr.GetTenantUserStats(ctx, ci.tenantID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "tenant stats: %v", err)
+	}
+
+	// Upstream filters UserStat by the requested email; UsersStat returns all.
+	if req.GetType() == common.StatType_UserStat {
+		resp = filterStatsByName(resp, req.GetName())
+	}
+	if !req.GetReset_() {
+		return resp, nil
+	}
+	return s.deltaStats(ci.tenantID, resp), nil
+}
+
+// filterStatsByName keeps only the stats of one user (UserStat). Xray reports
+// each direction separately (Type is uplink or downlink), so both are kept.
+func filterStatsByName(resp *common.StatResponse, name string) *common.StatResponse {
+	out := &common.StatResponse{Stats: make([]*common.Stat, 0, len(resp.GetStats()))}
+	for _, st := range resp.GetStats() {
+		if st.GetName() == name {
+			out.Stats = append(out.Stats, st)
+		}
+	}
+	return out
+}
+
+// deltaStats converts cumulative per-user counters into the per-call deltas a
+// PasarGuard panel accumulates when it asks with reset=true.
+//
+// The shared core's counters are deliberately not reset: CollectAndEnforce reads
+// them every few seconds and needs the absolute values, and a reset here would
+// silently drop the bytes written between two of its reads. Tracking the last
+// reported value per stat gives the panel the same contract without disturbing
+// that accounting.
+//
+// The first reset call for a tenant seeds every visible counter and answers
+// zero. Otherwise a panel connecting to a tenant that already carried traffic
+// (a reconnected panel, or users provisioned before it) would receive the whole
+// lifetime as one delta and bill it instantly.
+func (s *Server) deltaStats(tenantID string, resp *common.StatResponse) *common.StatResponse {
+	s.statsMu.Lock()
+	defer s.statsMu.Unlock()
+
+	if s.statsSeen == nil {
+		s.statsSeen = make(map[string]*tenantStats)
+	}
+	ts := s.statsSeen[tenantID]
+	if ts == nil {
+		ts = &tenantStats{seen: make(map[string]int64)}
+		s.statsSeen[tenantID] = ts
+	}
+
+	out := &common.StatResponse{Stats: make([]*common.Stat, 0, len(resp.GetStats()))}
+	for _, st := range resp.GetStats() {
+		// Xray reports each direction as its own counter: Type is uplink or
+		// downlink, while Link is always "traffic". They must be tracked apart.
+		key := st.GetName() + "\x00" + st.GetType()
+		current := st.GetValue()
+		last, known := ts.seen[key]
+		ts.seen[key] = current
+
+		var delta int64
+		switch {
+		case !ts.seeded:
+			delta = 0
+		case !known:
+			// A counter unseen at seed time belongs to a user added afterwards,
+			// so its whole value is traffic since then.
+			delta = current
+		case current >= last:
+			delta = current - last
+		default:
+			// Counter restarted (user removed and re-added, or core restarted).
+			delta = current
+		}
+		if delta < 0 {
+			delta = 0
+		}
+		out.Stats = append(out.Stats, &common.Stat{
+			Name:  st.GetName(),
+			Type:  st.GetType(),
+			Link:  st.GetLink(),
+			Value: delta,
+		})
+	}
+	ts.seeded = true
+	return out
 }
 
 func (s *Server) GetOutboundsLatency(context.Context, *common.LatencyRequest) (*common.LatencyResponse, error) {

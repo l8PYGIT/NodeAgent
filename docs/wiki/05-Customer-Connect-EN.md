@@ -21,7 +21,8 @@ You (the customer) have your own PasarGuard panel. You add the operator's node l
 ## After connecting
 - The node should show **connected**. If your panel pushes core config, the node **ignores** it (no error) — the core config belongs to the operator.
 - Users you create in your panel (vless/vmess/...) are added on the node under your tenant and appear in your own panel.
-- Per-user traffic stats are returned to your panel.
+- Per-user traffic stats are returned to your panel. Like a normal node, each poll
+  reports only the bytes since the previous poll, so usage is counted once.
 - When your quota/expiry runs out, your users are disconnected and your key is rejected. After the operator renews, you reconnect.
 
 ## Critical for end-user links to work
